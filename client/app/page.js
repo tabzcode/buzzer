@@ -59,7 +59,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    socketRef.current = io(SOCKET_URL, { 
+    socketRef.current = io("https://buzzer-n9va.onrender.com", { 
       forceNew: true,
       multiplex: false,
       transports: ['websocket', 'polling']
