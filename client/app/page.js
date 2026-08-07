@@ -3,10 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { Shield, Users, RotateCcw, CheckCircle2, XCircle, Sparkles, Volume2, Trophy, Lock, Check, UserMinus, Trash2, ChevronDown, ChevronUp, AlertTriangle, LogOut, Info, KeyRound, Plus, UserPlus, Activity, ArrowLeft } from 'lucide-react';
-
-const socket = io("https://buzzer-n9va.onrender.com");
+let socket;
 
 export default function App() {
+    useEffect(() => {
+  socket = io("https://buzzer-n9va.onrender.com");
+}, []);
   const [screen, setScreen] = useState('LANDING'); // 'LANDING', 'CREATE_FORM', 'JOIN_HOST_FORM', 'JOIN_PARTICIPANT_FORM', 'GAME'
   const [role, setRole] = useState(null); // 'HOST' or 'PARTICIPANT'
   const [roomCode, setRoomCode] = useState('');
