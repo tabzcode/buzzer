@@ -620,7 +620,7 @@ export default function App() {
                             <button 
                               onClick={() => socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 100 })}
                               className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg"
-                              title="Correct (+100 pts)"
+                              title="Correct (+5 pts)"
                             >
                               <CheckCircle2 className="w-4 h-4" />
                             </button>
