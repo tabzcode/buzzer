@@ -116,7 +116,7 @@ io.on('connection', (socket) => {
     const alreadyInQueue = room.queue.some((item) => item.teamName === teamName);
     if (!alreadyInQueue) {
       room.queue.push({ teamName, playerName, timestamp: Date.now() });
-      addLog(room, 'BUZZER', `Team "${teamName}" (${playerName}) buzzed in!`);
+      addLog(room, 'BUZZER', `${playerName} from ${teamName} pressed the buzzer`);
       io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
       io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
     }
