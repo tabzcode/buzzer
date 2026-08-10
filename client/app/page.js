@@ -154,6 +154,9 @@ export default function App() {
     if (!hostName || !hostPassword || !participantPassword) {
       return alert('Please fill in all fields!');
     }
+    if (hostPassword.length !== 4 || participantPassword.length !== 4) {
+      return alert('Both Host and Participant passwords must be exactly 4 characters long!');
+    }
     if (hostPassword === participantPassword) {
       return alert('Host Password and Participant Password CANNOT be the same!');
     }
@@ -169,6 +172,9 @@ export default function App() {
     if (!targetRoom || !enteredName || !enteredPassword) {
       return alert('Please fill in all required fields!');
     }
+    if (enteredPassword.length !== 4) {
+      return alert('Password must be exactly 4 characters long!');
+    }
     socketRef.current.emit('JOIN_AS_HOST', { roomCode: targetRoom, hostName: enteredName, hostPassword: enteredPassword, joinMethod: isQr ? 'QR Code' : 'Room ID' });
   };
 
@@ -179,6 +185,9 @@ export default function App() {
 
     if (!targetRoom || !enteredName || !enteredPassword) {
       return alert('Please fill in all required fields!');
+    }
+    if (enteredPassword.length !== 4) {
+      return alert('Password must be exactly 4 characters long!');
     }
     playerRef.current = enteredName;
     socketRef.current.emit('JOIN_ROOM_INITIAL', { roomCode: targetRoom, playerName: enteredName, participantPassword: enteredPassword, joinMethod: isQr ? 'QR Code' : 'Room ID' });
@@ -387,14 +396,15 @@ export default function App() {
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password</label>
+              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password (Exactly 4 Chars)</label>
               <div className="relative">
                 <input 
                   type="password" 
-                  placeholder="Password for other hosts" 
+                  maxLength={4}
+                  placeholder="4-digit password" 
                   value={hostPassword}
                   onChange={(e) => setHostPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10"
+                  className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10 tracking-widest font-mono"
                   required
                 />
                 <Lock className="w-4 h-4 text-indigo-400 absolute right-3 top-3.5" />
@@ -402,14 +412,15 @@ export default function App() {
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password</label>
+              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password (Exactly 4 Chars)</label>
               <div className="relative">
                 <input 
                   type="password" 
-                  placeholder="Password for participants" 
+                  maxLength={4}
+                  placeholder="4-digit password" 
                   value={participantPassword}
                   onChange={(e) => setParticipantPassword(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10"
+                  className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10 tracking-widest font-mono"
                   required
                 />
                 <KeyRound className="w-4 h-4 text-emerald-400 absolute right-3 top-3.5" />
@@ -468,13 +479,14 @@ export default function App() {
             )}
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password</label>
+              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password (4 Chars)</label>
               <input 
                 type="password" 
-                placeholder="Enter host password" 
+                maxLength={4}
+                placeholder="4-digit host password" 
                 value={enteredPassword}
                 onChange={(e) => setEnteredPassword(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono"
                 required
               />
             </div>
@@ -531,13 +543,14 @@ export default function App() {
             )}
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password</label>
+              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password (4 Chars)</label>
               <input 
                 type="password" 
-                placeholder="Enter participant password" 
+                maxLength={4}
+                placeholder="4-digit participant password" 
                 value={enteredPassword}
                 onChange={(e) => setEnteredPassword(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500"
+                className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono"
                 required
               />
             </div>
