@@ -67,6 +67,7 @@ export default function App() {
 
     socketRef.current.on('ROOM_CREATED', ({ roomCode, logs }) => {
       setRoomCode(roomCode);
+      setEnteredName(hostName);
       setRole('HOST');
       setScreen('GAME');
       if (logs) setActivityLogs(logs);
@@ -145,7 +146,7 @@ export default function App() {
     return () => {
       if (socketRef.current) socketRef.current.disconnect();
     };
-  }, []);
+  }, [hostName]);
 
   // Handlers for Form Actions
   const handleCreateRoomSubmit = (e) => {
@@ -827,7 +828,7 @@ export default function App() {
       )}
 
       <footer className="text-center text-xs text-slate-700 py-2">
-        Developed by Tabres
+        Sub-50ms Zero Latency Quiz Engine
       </footer>
     </div>
   );
