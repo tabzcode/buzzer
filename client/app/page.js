@@ -828,7 +828,7 @@ export default function App() {
       )}
 
       <footer className="text-center text-xs text-slate-700 py-2">
-        Sub-50ms Zero Latency Quiz Engine
+        Developed by Tabres
       </footer>
     </div>
   );
