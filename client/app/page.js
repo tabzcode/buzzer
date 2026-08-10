@@ -560,7 +560,7 @@ export default function App() {
           <div className="lg:col-span-2 space-y-6">
             {role === 'HOST' && (
               <div className="space-y-6">
-                {/* QR Code & Reset Box matching Screenshot 2 */}
+                {/* QR Code & Reset Box */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col items-center space-y-4">
                   <div className="p-3 bg-white rounded-2xl shadow-xl">
                     <QRCodeSVG value={`https://${typeof window !== 'undefined' ? window.location.host : ''}?room=${roomCode}`} size={140} />
@@ -618,7 +618,7 @@ export default function App() {
                         {index === 0 && (
                           <div className="flex items-center space-x-2">
                             <button 
-                              onClick={() => socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 100 })}
+                              onClick={() => socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 5 })}
                               className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg"
                               title="Correct (+5 pts)"
                             >
@@ -726,7 +726,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Scoreboard & Team Roster matching Screenshot 2 */}
+            {/* Scoreboard & Team Roster */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
               <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                 <Trophy className="w-4 h-4 text-amber-400" />
