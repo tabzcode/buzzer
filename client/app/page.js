@@ -129,7 +129,7 @@ export default function App() {
         teamRef.current === tName && 
         playerRef.current === pName
       ) {
-        setKickedNotice('Host has removed you from the team.');
+        setKickedNotice('Host has been removed you from the team.');
         setScreen('LANDING');
         setRole(null);
         teamRef.current = '';
@@ -209,7 +209,9 @@ export default function App() {
     setExpandedTeams((prev) => ({ ...prev, [tName]: !prev[tName] }));
   };
 
-  const hasTeamBuzzed = queue.some((item) => item.teamName === teamRef.current);
+  const myTeamQueueIndex = queue.findIndex((item) => item.teamName === teamRef.current);
+  const hasTeamBuzzed = myTeamQueueIndex !== -1;
+  const myRank = hasTeamBuzzed ? myTeamQueueIndex + 1 : null;
 
   const handleBuzz = () => {
     if (hasTeamBuzzed || !socketRef.current || !teamRef.current) return;
@@ -463,7 +465,6 @@ export default function App() {
               />
             </div>
 
-            {/* Hide Room ID if joined via QR code */}
             {!(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) && (
               <div>
                 <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Room ID</label>
@@ -483,7 +484,7 @@ export default function App() {
               <input 
                 type="password" 
                 maxLength={4}
-                placeholder="4-digit host password" 
+                placeholder="4-digit host password or master admin" 
                 value={enteredPassword}
                 onChange={(e) => setEnteredPassword(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono"
@@ -527,7 +528,6 @@ export default function App() {
               />
             </div>
 
-            {/* Hide Room ID if joined via QR code */}
             {!(typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('room')) && (
               <div>
                 <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Room ID</label>
@@ -657,7 +657,6 @@ export default function App() {
             {role === 'PARTICIPANT' && (
               <div className="flex flex-col items-center justify-center space-y-6">
                 {!teamRef.current ? (
-                  /* Team Selection View for Participants */
                   <div className="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
                     <h3 className="text-sm font-extrabold text-indigo-300 uppercase tracking-wider text-center">Select Your Team</h3>
                     <p className="text-xs text-slate-400 text-center">Choose a team created by the host to join:</p>
@@ -695,7 +694,6 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  /* Active Buzzer View once team is selected */
                   <div className="w-full flex flex-col items-center space-y-6">
                     <div className="flex items-center justify-between w-full bg-slate-900 border border-slate-800 px-5 py-3 rounded-2xl">
                       <span className="font-bold text-sm text-indigo-300">Team: {teamRef.current}</span>
@@ -718,11 +716,12 @@ export default function App() {
                       }`}
                       style={{ boxShadow: hasTeamBuzzed ? 'none' : '0 20px 50px rgba(220, 38, 38, 0.5)' }}
                     >
-                      <div className="flex flex-col items-center space-y-2">
+                      <div className="flex flex-col items-center space-y-1">
                         {hasTeamBuzzed ? (
                           <>
-                            <Check className="w-12 h-12 text-emerald-400" />
-                            <span className="text-2xl font-extrabold tracking-widest text-emerald-400">PRESSED</span>
+                            <Check className="w-10 h-10 text-emerald-400" />
+                            <span className="text-3xl font-black text-emerald-400 font-mono">#{myRank}</span>
+                            <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">PRESSED</span>
                           </>
                         ) : (
                           <span className="text-4xl font-black tracking-widest">BUZZ</span>
@@ -731,7 +730,7 @@ export default function App() {
                     </button>
 
                     <p className="text-xs text-slate-500">
-                      {hasTeamBuzzed ? 'Your team has buzzed in! Waiting for host response...' : 'Tap to claim response for your team!'}
+                      {hasTeamBuzzed ? `Your team buzzed in at Position #${myRank}! Waiting for host response...` : 'Tap to claim response for your team!'}
                     </p>
                   </div>
                 )}
