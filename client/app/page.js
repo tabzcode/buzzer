@@ -2,9 +2,54 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
-import { Shield, Users, RotateCcw, CheckCircle2, XCircle, Sparkles, Volume2, Trophy, Lock, Check, UserMinus, Trash2, ChevronDown, ChevronUp, AlertTriangle, LogOut, Info, KeyRound, Plus, UserPlus, Activity, ArrowLeft } from 'lucide-react';
+import { 
+  Shield, Users, RotateCcw, CheckCircle2, XCircle, Sparkles, 
+  Volume2, Trophy, Lock, Check, UserMinus, Trash2, ChevronDown, 
+  ChevronUp, AlertTriangle, LogOut, Info, KeyRound, Plus, 
+  UserPlus, Activity, ArrowLeft, PlusCircle, MinusCircle 
+} from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
+
+// Synthesized audio feedback via Web Audio API (no external asset dependencies)
+const playSound = (type) => {
+  if (typeof window === 'undefined') return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'BUZZ') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'CORRECT') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'WRONG') {
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(200, ctx.currentTime);
+      osc.frequency.setValueAtTime(130, ctx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    }
+  } catch (e) {
+    console.error("Audio synth error:", e);
+  }
+};
 
 export default function App() {
   const [screen, setScreen] = useState('LANDING'); // 'LANDING', 'CREATE_FORM', 'JOIN_HOST_FORM', 'JOIN_PARTICIPANT_FORM', 'GAME'
@@ -84,8 +129,8 @@ export default function App() {
 
     currentSocket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: joinedTeam, teams, logs }) => {
       setRoomCode(joinedRoom);
-      teamRef.current = joinedTeam;
-      setTeams(teams);
+      teamRef.current = joinedTeam || '';
+      setTeams(teams || {});
       setRole('PARTICIPANT');
       setScreen('GAME');
       if (logs) setActivityLogs(logs);
@@ -99,6 +144,7 @@ export default function App() {
 
     currentSocket.on('BUZZER_QUEUE_UPDATED', ({ queue }) => {
       setQueue(queue);
+      if (queue.length > 0) playSound('BUZZ');
     });
 
     currentSocket.on('BUZZER_RESET', () => {
@@ -148,7 +194,7 @@ export default function App() {
     };
   }, [hostName]);
 
-  // Handlers for Form Actions
+  // Form Action Handlers
   const handleCreateRoomSubmit = (e) => {
     e.preventDefault();
     if (!hostName || !hostPassword || !participantPassword) {
@@ -209,6 +255,11 @@ export default function App() {
     setExpandedTeams((prev) => ({ ...prev, [tName]: !prev[tName] }));
   };
 
+  const handleScoreChange = (tName, delta) => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: tName, delta });
+  };
+
   const myTeamQueueIndex = queue.findIndex((item) => item.teamName === teamRef.current);
   const hasTeamBuzzed = myTeamQueueIndex !== -1;
   const myRank = hasTeamBuzzed ? myTeamQueueIndex + 1 : null;
@@ -216,7 +267,21 @@ export default function App() {
   const handleBuzz = () => {
     if (hasTeamBuzzed || !socketRef.current || !teamRef.current) return;
     if (navigator.vibrate) navigator.vibrate(100);
+    playSound('BUZZ');
     socketRef.current.emit('PRESS_BUZZER', { roomCode, teamName: teamRef.current, playerName: enteredName });
+  };
+
+  const handleLeaveRoom = () => {
+    if (window.confirm("Are you sure you want to exit this room?")) {
+      setScreen('LANDING');
+      setRole(null);
+      setRoomCode('');
+      teamRef.current = '';
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+        socketRef.current.connect();
+      }
+    }
   };
 
   const confirmAction = () => {
@@ -227,6 +292,13 @@ export default function App() {
       socketRef.current.emit('REMOVE_TEAM', { roomCode, teamName: confirmModal.teamName });
     }
     setConfirmModal({ open: false, type: '', teamName: '', playerName: '' });
+  };
+
+  const getQrUrl = () => {
+    if (typeof window !== 'undefined') {
+      return `${window.location.origin}?room=${roomCode}`;
+    }
+    return roomCode;
   };
 
   return (
@@ -282,7 +354,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Members Popup Modal for Participants */}
+      {/* Members Popup Modal */}
       {membersModalTeam && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-sm w-full p-6 rounded-3xl space-y-4 shadow-2xl">
@@ -314,7 +386,7 @@ export default function App() {
 
       {/* HEADER */}
       <header className="flex justify-between items-center pb-4 border-b border-slate-800">
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setScreen('LANDING')}>
           <div className="p-2 bg-indigo-600 rounded-xl">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
@@ -322,21 +394,30 @@ export default function App() {
         </div>
 
         {roomCode && (
-          <div className="bg-slate-900 border border-slate-700 px-4 py-2 rounded-2xl text-right flex flex-col items-end shadow-md">
-            <div className="text-xs font-mono text-slate-400">
-              ROOM: <span className="text-indigo-400 font-bold">{roomCode}</span>
+          <div className="flex items-center space-x-3">
+            <div className="bg-slate-900 border border-slate-700 px-4 py-2 rounded-2xl text-right flex flex-col items-end shadow-md">
+              <div className="text-xs font-mono text-slate-400">
+                ROOM: <span className="text-indigo-400 font-bold">{roomCode}</span>
+              </div>
+              <div className="text-sm font-bold text-white leading-tight">
+                {role === 'HOST' ? enteredName || hostName || 'Host' : enteredName || 'Participant'}
+              </div>
+              <div className="text-[10px] font-extrabold tracking-wider text-amber-400 uppercase">
+                {role === 'HOST' ? 'HOST' : teamRef.current || 'NO TEAM'}
+              </div>
             </div>
-            <div className="text-sm font-bold text-white leading-tight">
-              {role === 'HOST' ? enteredName || 'Host' : enteredName || 'Participant'}
-            </div>
-            <div className="text-[10px] font-extrabold tracking-wider text-amber-400 uppercase">
-              {role === 'HOST' ? 'HOST' : teamRef.current || 'NO TEAM'}
-            </div>
+            <button 
+              onClick={handleLeaveRoom}
+              className="p-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl transition-all"
+              title="Leave Room"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
           </div>
         )}
       </header>
 
-      {/* SCREEN 1: LANDING WITH 3 MAIN BUTTONS */}
+      {/* SCREEN 1: LANDING */}
       {screen === 'LANDING' && (
         <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
           <h2 className="text-3xl font-extrabold">Trivia Arena</h2>
@@ -431,7 +512,7 @@ export default function App() {
 
             <button 
               type="submit"
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2"
+              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2 text-white"
             >
               <Shield className="w-4 h-4" />
               <span>Initialize Room</span>
@@ -484,7 +565,7 @@ export default function App() {
               <input 
                 type="password" 
                 maxLength={4}
-                placeholder="4-digit host password or master admin" 
+                placeholder="4-digit host password" 
                 value={enteredPassword}
                 onChange={(e) => setEnteredPassword(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono"
@@ -494,7 +575,7 @@ export default function App() {
 
             <button 
               type="submit"
-              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2"
+              className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2 text-white"
             >
               <Shield className="w-4 h-4" />
               <span>Enter as Co-Host</span>
@@ -566,23 +647,25 @@ export default function App() {
         </div>
       )}
 
-      {/* SCREEN 2: GAME & BROADCAST DASHBOARD */}
+      {/* GAME DASHBOARD */}
       {screen === 'GAME' && (
         <div className="max-w-6xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 py-4">
           
-          {/* LEFT / CENTER: MAIN GAME CONTROLS */}
+          {/* MAIN GAME CONTROLS */}
           <div className="lg:col-span-2 space-y-6">
             {role === 'HOST' && (
               <div className="space-y-6">
                 {/* QR Code & Reset Box */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col items-center space-y-4">
                   <div className="p-3 bg-white rounded-2xl shadow-xl">
-                    <QRCodeSVG value={`https://${typeof window !== 'undefined' ? window.location.host : ''}?room=${roomCode}`} size={140} />
+                    <QRCodeSVG value={getQrUrl()} size={140} />
                   </div>
                   <p className="text-xs text-slate-400">Scan QR Code to Join Room <span className="text-indigo-400 font-mono font-bold">{roomCode}</span></p>
                   <button 
-                    onClick={() => socketRef.current && socketRef.current.emit('RESET_BUZZER', { roomCode })}
-                    className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl font-bold flex items-center justify-center space-x-2 text-indigo-300"
+                    onClick={() => {
+                      if (socketRef.current) socketRef.current.emit('RESET_BUZZER', { roomCode });
+                    }}
+                    className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl font-bold flex items-center justify-center space-x-2 text-indigo-300 shadow-md"
                   >
                     <RotateCcw className="w-4 h-4 text-indigo-400" />
                     <span>Reset All Buzzers</span>
@@ -603,14 +686,14 @@ export default function App() {
                       onChange={(e) => setNewTeamName(e.target.value)}
                       className="flex-1 bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500"
                     />
-                    <button type="submit" className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-xl text-xs flex items-center space-x-1 shadow-md">
+                    <button type="submit" className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-xl text-xs flex items-center space-x-1 shadow-md text-white">
                       <Plus className="w-4 h-4" />
                       <span>Add Team</span>
                     </button>
                   </form>
                 </div>
 
-                {/* Host Live Speed Queue (With Accept/Pass controls) */}
+                {/* Host Live Speed Queue */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
                   <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                     <Volume2 className="w-4 h-4 text-indigo-400" />
@@ -632,18 +715,26 @@ export default function App() {
                         {index === 0 && (
                           <div className="flex items-center space-x-2">
                             <button 
-                              onClick={() => socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 5 })}
-                              className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg"
+                              onClick={() => {
+                                playSound('CORRECT');
+                                socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 5 });
+                              }}
+                              className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg flex items-center space-x-1"
                               title="Correct (+5 pts)"
                             >
                               <CheckCircle2 className="w-4 h-4" />
+                              <span className="text-xs font-bold">+5</span>
                             </button>
                             <button 
-                              onClick={() => socketRef.current && socketRef.current.emit('PASS_TO_NEXT', { roomCode })}
-                              className="p-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-lg"
-                              title="Wrong (Pass)"
+                              onClick={() => {
+                                playSound('WRONG');
+                                socketRef.current && socketRef.current.emit('PASS_TO_NEXT', { roomCode });
+                              }}
+                              className="p-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-lg flex items-center space-x-1"
+                              title="Wrong (Pass to next)"
                             >
                               <XCircle className="w-4 h-4" />
+                              <span className="text-xs font-bold">Pass</span>
                             </button>
                           </div>
                         )}
@@ -730,10 +821,10 @@ export default function App() {
                     </button>
 
                     <p className="text-xs text-slate-500">
-                      {hasTeamBuzzed ? `Your team buzzed in at Position #${myRank}! Waiting for host response...` : 'Tap to claim response for your team!'}
+                      {hasTeamBuzzed ? `Your team buzzed in at Position #${myRank}! Waiting for host...` : 'Tap to claim response for your team!'}
                     </p>
 
-                    {/* Participant Live Speed Queue (Read Only Rankings) */}
+                    {/* Participant Live Speed Queue */}
                     <div className="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
                       <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                         <Volume2 className="w-4 h-4 text-indigo-400" />
@@ -804,6 +895,24 @@ export default function App() {
                         
                         <div className="flex items-center space-x-2">
                           {role === 'HOST' && (
+                            <div className="flex items-center space-x-1 mr-2" onClick={(e) => e.stopPropagation()}>
+                              <button 
+                                onClick={() => handleScoreChange(name, -5)}
+                                className="p-1 text-slate-400 hover:text-rose-400 bg-slate-900 rounded border border-slate-800"
+                                title="Deduct 5 pts"
+                              >
+                                <MinusCircle className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleScoreChange(name, 5)}
+                                className="p-1 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded border border-slate-800"
+                                title="Add 5 pts"
+                              >
+                                <PlusCircle className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                          {role === 'HOST' && (
                             <button 
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -849,7 +958,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT SIDE: LIVE BROADCASTING ACTIVITY PANEL */}
+          {/* RIGHT SIDE: LIVE BROADCAST ACTIVITY PANEL */}
           <div className="space-y-6">
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 h-full sticky top-4 flex flex-col">
               <div className="flex items-center justify-between border-b border-slate-800 pb-3">
