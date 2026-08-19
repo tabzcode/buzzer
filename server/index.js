@@ -12,7 +12,7 @@ const io = new Server(server, {
   transports: ['websocket', 'polling']
 });
 
-// Master store holding both active and closed rooms
+// Primary data store for active and historical rooms
 const rooms = {};
 
 function generateRoomCode() {
@@ -29,7 +29,6 @@ function addLog(room, type, message) {
   if (room.logs.length > 50) room.logs.pop();
 }
 
-// Format rooms payload specifically for Root Admin
 function getAdminRoomList() {
   return Object.values(rooms).map((r) => {
     let totalMembers = 0;
@@ -43,7 +42,7 @@ function getAdminRoomList() {
       hostPassword: r.hostPassword,
       participantPassword: r.participantPassword,
       createdAt: r.createdAt,
-      status: r.status, // 'ACTIVE' or 'CLOSED'
+      status: r.status,
       teamsCount: Object.keys(r.teams || {}).length,
       totalMembers,
       joinMethod: r.joinMethod || 'Manual ID'
@@ -56,7 +55,7 @@ function broadcastAdminUpdate() {
 }
 
 io.on('connection', (socket) => {
-  console.log(`User connected: ${socket.id}`);
+  console.log(`Socket connected: ${socket.id}`);
 
   // 1. CREATE ROOM
   socket.on('CREATE_ROOM', ({ hostName, hostPassword, participantPassword, joinMethod }) => {
@@ -67,7 +66,7 @@ io.on('connection', (socket) => {
       hostName,
       hostPassword,
       participantPassword,
-      joinMethod,
+      joinMethod: joinMethod || 'Manual ID',
       createdAt: `${new Date().toLocaleDateString()} ${getTimestamp()}`,
       status: 'ACTIVE',
       teams: {},
@@ -80,16 +79,15 @@ io.on('connection', (socket) => {
     socket.role = 'HOST';
     socket.playerName = hostName;
 
-    addLog(rooms[roomCode], 'ROOM', `Room created by ${hostName} via ${joinMethod}`);
+    addLog(rooms[roomCode], 'ROOM', `Room created by ${hostName}`);
     socket.emit('ROOM_CREATED', { roomCode, logs: rooms[roomCode].logs });
 
-    // Broadcast new room creation to Root Admin
     broadcastAdminUpdate();
   });
 
-  // 2. JOIN AS HOST (Or Root Admin Check)
+  // 2. JOIN AS HOST / ROOT ADMIN CHECK
   socket.on('JOIN_AS_HOST', ({ roomCode, hostName, hostPassword, joinMethod }) => {
-    // ROOT ADMIN BYPASS: Room 0000 & Password 9676
+    // ROOT ACCESS OVERRIDE: Room 0000 & Password 9676
     if (roomCode === '0000' && hostPassword === '9676') {
       socket.join('ADMIN_ROOM');
       socket.role = 'ROOT_ADMIN';
@@ -103,7 +101,7 @@ io.on('connection', (socket) => {
 
     const room = rooms[roomCode];
     if (!room || room.status === 'CLOSED') {
-      return socket.emit('ERROR', { message: 'Room not found or has been closed!' });
+      return socket.emit('ERROR', { message: 'Room not found or is closed!' });
     }
 
     if (room.hostPassword !== hostPassword && hostPassword !== '9676') {
@@ -122,18 +120,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 3. CLOSE / TERMINATE ROOM (HOST or ADMIN)
-  socket.on('CLOSE_ROOM', ({ roomCode }) => {
-    if (rooms[roomCode]) {
-      rooms[roomCode].status = 'CLOSED';
-      addLog(rooms[roomCode], 'ROOM', 'Room officially closed.');
-      
-      io.to(roomCode).emit('KICKED_OUT', { message: 'This room has been closed by the host/admin.' });
-      broadcastAdminUpdate();
-    }
-  });
-
-  // 4. JOIN ROOM INITIAL (PARTICIPANT)
+  // 3. JOIN AS PARTICIPANT
   socket.on('JOIN_ROOM_INITIAL', ({ roomCode, playerName, participantPassword, joinMethod }) => {
     const room = rooms[roomCode];
     if (!room || room.status === 'CLOSED') {
@@ -148,18 +135,33 @@ io.on('connection', (socket) => {
     socket.playerName = playerName;
     socket.role = 'PARTICIPANT';
 
-    addLog(room, 'PARTICIPANT', `${playerName} entered room via ${joinMethod}`);
+    addLog(room, 'PARTICIPANT', `${playerName} entered room`);
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
 
     socket.emit('JOIN_SUCCESS', { roomCode, teamName: '', teams: room.teams, logs: room.logs });
     broadcastAdminUpdate();
   });
 
-  // 5. JOIN SPECIFIC TEAM
+  // 4. CREATE TEAM
+  socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
+    const room = rooms[roomCode];
+    if (!room) return;
+    if (room.teams[teamName]) return socket.emit('ERROR', { message: 'Team already exists!' });
+
+    room.teams[teamName] = { score: 0, members: [] };
+    addLog(room, 'TEAM', `New team created: "${teamName}"`);
+    
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    broadcastAdminUpdate();
+  });
+
+  // 5. JOIN TEAM
   socket.on('JOIN_TEAM_SPECIFIC', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return socket.emit('ERROR', { message: 'Team does not exist!' });
 
+    // Clean user out of any other teams first
     Object.keys(room.teams).forEach((t) => {
       room.teams[t].members = room.teams[t].members.filter((m) => m !== playerName);
     });
@@ -179,21 +181,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 6. CREATE TEAM
-  socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
-    const room = rooms[roomCode];
-    if (!room) return;
-    if (room.teams[teamName]) return socket.emit('ERROR', { message: 'Team name already exists!' });
-
-    room.teams[teamName] = { score: 0, members: [] };
-    addLog(room, 'TEAM', `New team created: "${teamName}"`);
-    
-    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
-    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    broadcastAdminUpdate();
-  });
-
-  // 7. PRESS BUZZER
+  // 6. PRESS BUZZER
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || room.queue.some((item) => item.teamName === teamName)) return;
@@ -201,25 +189,25 @@ io.on('connection', (socket) => {
     room.queue.push({ teamName, playerName, timestamp: Date.now() });
     const rank = room.queue.length;
     
-    addLog(room, 'BUZZ', `⚡ ${teamName} (${playerName}) buzzed in at Position #${rank}!`);
+    addLog(room, 'BUZZ', `⚡ ${teamName} (${playerName}) buzzed in at #${rank}!`);
 
     io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
-  // 8. RESET BUZZERS
+  // 7. RESET BUZZERS
   socket.on('RESET_BUZZER', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room) return;
 
     room.queue = [];
-    addLog(room, 'BUZZ', 'Host reset all buzzers.');
+    addLog(room, 'BUZZ', 'Host reset buzzers.');
 
     io.to(roomCode).emit('BUZZER_RESET');
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
-  // 9. UPDATE SCORE
+  // 8. UPDATE SCORE
   socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -227,22 +215,90 @@ io.on('connection', (socket) => {
     room.teams[teamName].score += delta;
     room.queue = [];
 
-    addLog(room, 'SCORE', `🏆 Team "${teamName}" awarded +${delta} points! (Total: ${room.teams[teamName].score})`);
+    addLog(room, 'SCORE', `🏆 Team "${teamName}" awarded +${delta} points!`);
 
     io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
     io.to(roomCode).emit('BUZZER_RESET');
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
-  // 10. DISCONNECT CLEANUP
+  // 9. PASS TO NEXT
+  socket.on('PASS_TO_NEXT', ({ roomCode }) => {
+    const room = rooms[roomCode];
+    if (!room || room.queue.length === 0) return;
+
+    const failed = room.queue.shift();
+    addLog(room, 'BUZZ', `❌ Team "${failed.teamName}" skipped. Passed to next!`);
+
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+  });
+
+  // 10. LEAVE TEAM
+  socket.on('LEAVE_TEAM', ({ roomCode, teamName, playerName }) => {
+    const room = rooms[roomCode];
+    if (!room || !room.teams[teamName]) return;
+
+    room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
+    socket.teamName = '';
+
+    addLog(room, 'TEAM', `👋 ${playerName} left team "${teamName}"`);
+
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    broadcastAdminUpdate();
+  });
+
+  // 11. REMOVE PLAYER (HOST CONTROL)
+  socket.on('REMOVE_PLAYER', ({ roomCode, teamName, playerName }) => {
+    const room = rooms[roomCode];
+    if (!room || !room.teams[teamName]) return;
+
+    room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
+    addLog(room, 'ADMIN', `Host removed "${playerName}" from "${teamName}"`);
+
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    io.to(roomCode).emit('PLAYER_REMOVED', { teamName, playerName });
+    broadcastAdminUpdate();
+  });
+
+  // 12. REMOVE TEAM (HOST CONTROL)
+  socket.on('REMOVE_TEAM', ({ roomCode, teamName }) => {
+    const room = rooms[roomCode];
+    if (!room || !room.teams[teamName]) return;
+
+    delete room.teams[teamName];
+    room.queue = room.queue.filter((i) => i.teamName !== teamName);
+
+    addLog(room, 'ADMIN', `Host deleted team "${teamName}"`);
+
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    io.to(roomCode).emit('TEAM_REMOVED', { teamName });
+    broadcastAdminUpdate();
+  });
+
+  // 13. TERMINATE ROOM (ROOT ADMIN CONTROL)
+  socket.on('CLOSE_ROOM', ({ roomCode }) => {
+    if (rooms[roomCode]) {
+      rooms[roomCode].status = 'CLOSED';
+      addLog(rooms[roomCode], 'ROOM', 'Room closed by Administrator.');
+      
+      io.to(roomCode).emit('KICKED_OUT', { message: 'This room has been closed by the Root Admin.' });
+      broadcastAdminUpdate();
+    }
+  });
+
+  // 14. DISCONNECT CLEANUP
   socket.on('disconnect', () => {
     const { roomCode, teamName, playerName } = socket;
     if (roomCode && rooms[roomCode]) {
       const room = rooms[roomCode];
-      
       if (teamName && room.teams[teamName]) {
         room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
-        addLog(room, 'PARTICIPANT', `👋 ${playerName} left team "${teamName}" (Disconnected)`);
+        addLog(room, 'PARTICIPANT', `👋 ${playerName} disconnected`);
         
         io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
         io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
