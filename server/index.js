@@ -9,185 +9,254 @@ app.use(cors());
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
-  }
+    origin: "*",
+    methods: ["GET", "POST"]
+  },
+  transports: ['websocket', 'polling']
 });
 
+// In-memory database storage for rooms
 const rooms = {};
 
-const generateRoomCode = () => {
+// Helper function to generate a 6-digit random room code
+function generateRoomCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
-};
+}
 
-const addLog = (room, type, message) => {
+// Helper function to format timestamp for logs
+function getTimestamp() {
+  const now = new Date();
+  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+// Helper function to add activity log
+function addLog(room, type, message) {
   if (!room.logs) room.logs = [];
-  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  room.logs.unshift({ type, message, time });
-  if (room.logs.length > 30) room.logs.pop();
-};
+  room.logs.unshift({ type, message, time: getTimestamp() });
+  if (room.logs.length > 50) room.logs.pop(); // Keep last 50 logs max
+}
 
 io.on('connection', (socket) => {
-  // 1. Create Room
-  socket.on('CREATE_ROOM', ({ hostName, hostPassword, participantPassword, joinMethod }) => {
-    if (!hostPassword || !participantPassword) {
-      return socket.emit('ERROR', { message: 'Both Host and Participant passwords are required!' });
-    }
-    if (hostPassword === participantPassword) {
-      return socket.emit('ERROR', { message: 'Host password and Participant password cannot be the same!' });
-    }
+  console.log(`User connected: ${socket.id}`);
 
+  // 1. CREATE ROOM (HOST)
+  socket.on('CREATE_ROOM', ({ hostName, hostPassword, participantPassword, joinMethod }) => {
     const roomCode = generateRoomCode();
+    
     rooms[roomCode] = {
+      hostName,
       hostPassword,
       participantPassword,
-      teams: {},
-      queue: [],
+      teams: {}, // { teamName: { score: 0, members: [] } }
+      queue: [], // [{ teamName, playerName, timestamp }]
       logs: []
     };
 
     socket.join(roomCode);
-    addLog(rooms[roomCode], 'ROOM CREATED', `${hostName} created room via ${joinMethod}`);
+    socket.roomCode = roomCode;
+    socket.role = 'HOST';
+
+    addLog(rooms[roomCode], 'ROOM', `Room created by ${hostName} via ${joinMethod}`);
+    
     socket.emit('ROOM_CREATED', { roomCode, logs: rooms[roomCode].logs });
   });
 
-  // 2. Join as Host
+  // 2. JOIN AS HOST / CO-HOST
   socket.on('JOIN_AS_HOST', ({ roomCode, hostName, hostPassword, joinMethod }) => {
     const room = rooms[roomCode];
-    if (!room) return socket.emit('ERROR', { message: 'Room not found!' });
-    if (room.hostPassword !== hostPassword) return socket.emit('ERROR', { message: 'Incorrect Host password!' });
+    if (!room) {
+      return socket.emit('ERROR', { message: 'Room not found! Please check the Room ID.' });
+    }
+    if (room.hostPassword !== hostPassword) {
+      return socket.emit('ERROR', { message: 'Incorrect Host Password!' });
+    }
 
     socket.join(roomCode);
-    addLog(room, 'HOST JOINED', `${hostName} joined as Host via ${joinMethod}`);
+    socket.roomCode = roomCode;
+    socket.role = 'HOST';
+
+    addLog(room, 'HOST', `${hostName} joined as Co-Host via ${joinMethod}`);
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    socket.emit('HOST_JOIN_SUCCESS', { roomCode, teams: room.teams, queue: room.queue, logs: room.logs });
+
+    socket.emit('HOST_JOIN_SUCCESS', {
+      roomCode,
+      teams: room.teams,
+      queue: room.queue,
+      logs: room.logs
+    });
   });
 
-  // 3. Participant Initial Authentication
+  // 3. JOIN ROOM INITIAL (PARTICIPANT)
   socket.on('JOIN_ROOM_INITIAL', ({ roomCode, playerName, participantPassword, joinMethod }) => {
     const room = rooms[roomCode];
-    if (!room) return socket.emit('ERROR', { message: 'Room not found!' });
-    if (room.participantPassword !== participantPassword) return socket.emit('ERROR', { message: 'Incorrect Participant password!' });
+    if (!room) {
+      return socket.emit('ERROR', { message: 'Room not found! Please check the Room ID.' });
+    }
+    if (room.participantPassword !== participantPassword) {
+      return socket.emit('ERROR', { message: 'Incorrect Participant Password!' });
+    }
 
     socket.join(roomCode);
-    addLog(room, 'PARTICIPANT JOINED', `${playerName} joined room via ${joinMethod}`);
+    socket.roomCode = roomCode;
+    socket.playerName = playerName;
+
+    addLog(room, 'PARTICIPANT', `${playerName} entered room via ${joinMethod}`);
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    socket.emit('JOIN_SUCCESS', { roomCode, teamName: '', teams: room.teams, logs: room.logs });
+
+    socket.emit('JOIN_SUCCESS', {
+      roomCode,
+      teamName: '',
+      teams: room.teams,
+      logs: room.logs
+    });
   });
 
-  // 4. Host creates a team
+  // 4. CREATE TEAM (HOST)
   socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room) return;
+
     if (room.teams[teamName]) {
       return socket.emit('ERROR', { message: 'Team name already exists!' });
     }
 
     room.teams[teamName] = { score: 0, members: [] };
-    addLog(room, 'TEAM CREATED', `Host created team "${teamName}"`);
+    
+    addLog(room, 'TEAM', `New team created: "${teamName}"`);
+    
     io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
-  // 5. Participant joins specific team
+  // 5. JOIN SPECIFIC TEAM (PARTICIPANT)
   socket.on('JOIN_TEAM_SPECIFIC', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
-    if (!room || !room.teams[teamName]) return;
+    if (!room || !room.teams[teamName]) {
+      return socket.emit('ERROR', { message: 'Team does not exist!' });
+    }
 
-    // Remove player from other teams if already in one
+    // Remove player from any other team first if they were in one
     Object.keys(room.teams).forEach((t) => {
-      room.teams[t].members = room.teams[t].members.filter(m => m !== playerName);
+      room.teams[t].members = room.teams[t].members.filter((m) => m !== playerName);
     });
 
-    if (!room.teams[teamName].members.includes(playerName)) {
-      room.teams[teamName].members.push(playerName);
-    }
+    room.teams[teamName].members.push(playerName);
+    socket.teamName = teamName;
 
-    addLog(room, 'TEAM JOINED', `${playerName} joined team "${teamName}"`);
-    socket.emit('JOIN_SUCCESS', { roomCode, teamName, teams: room.teams, logs: room.logs });
+    addLog(room, 'TEAM', `${playerName} joined team "${teamName}"`);
+
     io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+
+    socket.emit('JOIN_SUCCESS', {
+      roomCode,
+      teamName,
+      teams: room.teams,
+      logs: room.logs
+    });
   });
 
+  // 6. PRESS BUZZER
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
-    if (!room || !room.teams[teamName]) return;
+    if (!room) return;
 
-    const alreadyInQueue = room.queue.some((item) => item.teamName === teamName);
-    if (!alreadyInQueue) {
-      room.queue.push({ teamName, playerName, timestamp: Date.now() });
-      addLog(room, 'BUZZER', `${playerName} from ${teamName} pressed the buzzer`);
-      io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
-      io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    // Check if team has already buzzed in current round
+    const alreadyBuzzed = room.queue.some((item) => item.teamName === teamName);
+    if (alreadyBuzzed) return;
+
+    room.queue.push({
+      teamName,
+      playerName,
+      timestamp: Date.now()
+    });
+
+    const rank = room.queue.length;
+    addLog(room, 'BUZZ', `⚡ ${teamName} (${playerName}) buzzed in at Rank #${rank}!`);
+
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+
+    if (rank === 1) {
+      io.to(roomCode).emit('HOST_ACTION_NOTICE', { message: `⚡ Team "${teamName}" buzzed first!` });
     }
   });
 
+  // 7. RESET BUZZERS
   socket.on('RESET_BUZZER', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room) return;
+
     room.queue = [];
-    addLog(room, 'BUZZER RESET', `Host reset all buzzers`);
+    addLog(room, 'BUZZ', 'Host reset all buzzers for the next question.');
+
     io.to(roomCode).emit('BUZZER_RESET');
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
+  // 8. UPDATE SCORE & NEXT QUESTION (Correct Answer)
+  socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
+    const room = rooms[roomCode];
+    if (!room || !room.teams[teamName]) return;
+
+    room.teams[teamName].score += delta;
+    room.queue = []; // Clear queue for next question
+
+    addLog(room, 'SCORE', `🏆 Team "${teamName}" awarded +${delta} points! (Total: ${room.teams[teamName].score})`);
+
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('BUZZER_RESET');
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+  });
+
+  // 9. PASS TO NEXT (Wrong Answer - remove top team from queue)
   socket.on('PASS_TO_NEXT', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.queue.length === 0) return;
-    const passed = room.queue.shift();
-    addLog(room, 'PASS', `Team "${passed.teamName}" skipped`);
+
+    const failedTeam = room.queue.shift(); // Remove first team from queue
+    addLog(room, 'BUZZ', `❌ Team "${failedTeam.teamName}" was incorrect. Buzzer passed to next team!`);
+
     io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
     io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
   });
 
-  socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
-    const room = rooms[roomCode];
-    if (room && room.teams[teamName]) {
-      room.teams[teamName].score = Math.max(0, room.teams[teamName].score + delta);
-      room.queue = [];
-      addLog(room, 'SCORE UPDATED', `Team "${teamName}" awarded +${delta} pts`);
-      io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
-      io.to(roomCode).emit('BUZZER_RESET');
-      io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    }
-  });
-
+  // 10. REMOVE PLAYER
   socket.on('REMOVE_PLAYER', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
-    if (room && room.teams[teamName]) {
-      room.teams[teamName].members = room.teams[teamName].members.filter(m => m !== playerName);
-      
-      addLog(room, 'PLAYER REMOVED', `Host removed ${playerName} from ${teamName}`);
-      io.to(roomCode).emit('PLAYER_REMOVED', { teamName, playerName });
-      io.to(roomCode).emit('HOST_ACTION_NOTICE', { message: `Player "${playerName}" from team "${teamName}" was removed by Host.` });
+    if (!room || !room.teams[teamName]) return;
 
-      if (room.teams[teamName].members.length === 0) {
-        delete room.teams[teamName];
-        room.queue = room.queue.filter(item => item.teamName !== teamName);
-        io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
-      }
+    room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
+    addLog(room, 'ADMIN', `Host removed player "${playerName}" from team "${teamName}"`);
 
-      io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
-      io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    }
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    io.to(roomCode).emit('PLAYER_REMOVED', { teamName, playerName });
   });
 
+  // 11. REMOVE TEAM
   socket.on('REMOVE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
-    if (room && room.teams[teamName]) {
-      delete room.teams[teamName];
-      room.queue = room.queue.filter(item => item.teamName !== teamName);
-      
-      addLog(room, 'TEAM REMOVED', `Host deleted team "${teamName}"`);
-      io.to(roomCode).emit('TEAM_REMOVED', { teamName });
-      io.to(roomCode).emit('HOST_ACTION_NOTICE', { message: `Team "${teamName}" was removed by Host.` });
+    if (!room || !room.teams[teamName]) return;
 
-      io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
-      io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
-      io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
-    }
+    delete room.teams[teamName];
+    // Also remove any queue entries from this team
+    room.queue = room.queue.filter((item) => item.teamName !== teamName);
+
+    addLog(room, 'ADMIN', `Host deleted team "${teamName}"`);
+
+    io.to(roomCode).emit('TEAMS_UPDATED', room.teams);
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue });
+    io.to(roomCode).emit('ACTIVITY_LOGS_UPDATED', room.logs);
+    io.to(roomCode).emit('TEAM_REMOVED', { teamName });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`User disconnected: ${socket.id}`);
   });
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => console.log(`Backend running on port ${PORT}`));
+server.listen(PORT, () => {
+  console.log(`Buzzer backend server running on port ${PORT}`);
+});
