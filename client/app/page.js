@@ -129,7 +129,7 @@ export default function App() {
         teamRef.current === tName && 
         playerRef.current === pName
       ) {
-        setKickedNotice('Host has been removed you from the team.');
+        setKickedNotice('Host has removed you from the team.');
         setScreen('LANDING');
         setRole(null);
         teamRef.current = '';
@@ -610,11 +610,11 @@ export default function App() {
                   </form>
                 </div>
 
-                {/* Live Speed Queue */}
+                {/* Host Live Speed Queue (With Accept/Pass controls) */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
                   <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                     <Volume2 className="w-4 h-4 text-indigo-400" />
-                    <span>Live Speed Queue</span>
+                    <span>Live Speed Queue (Host Control)</span>
                   </h3>
                   {queue.length === 0 ? (
                     <p className="text-slate-500 text-sm py-6 text-center">Waiting for teams to buzz...</p>
@@ -732,6 +732,50 @@ export default function App() {
                     <p className="text-xs text-slate-500">
                       {hasTeamBuzzed ? `Your team buzzed in at Position #${myRank}! Waiting for host response...` : 'Tap to claim response for your team!'}
                     </p>
+
+                    {/* Participant Live Speed Queue (Read Only Rankings) */}
+                    <div className="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
+                      <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
+                        <Volume2 className="w-4 h-4 text-indigo-400" />
+                        <span>Live Speed Queue</span>
+                      </h3>
+                      {queue.length === 0 ? (
+                        <p className="text-slate-500 text-xs py-4 text-center">Waiting for teams to buzz...</p>
+                      ) : (
+                        queue.map((item, index) => (
+                          <div 
+                            key={index} 
+                            className={`flex justify-between items-center p-3 rounded-xl border ${
+                              item.teamName === teamRef.current 
+                                ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' 
+                                : index === 0 
+                                  ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' 
+                                  : 'bg-slate-950 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-3">
+                              <span className="font-mono font-bold text-sm">#{index + 1}</span>
+                              <div>
+                                <p className="font-bold text-sm flex items-center space-x-2">
+                                  <span>{item.teamName}</span>
+                                  {item.teamName === teamRef.current && (
+                                    <span className="text-[10px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded font-mono">YOUR TEAM</span>
+                                  )}
+                                </p>
+                                <p className="text-[11px] text-slate-400">Buzzed by: {item.playerName}</p>
+                              </div>
+                            </div>
+                            
+                            {index === 0 && (
+                              <span className="text-[10px] font-extrabold bg-amber-500/20 text-amber-400 px-2 py-1 rounded-md uppercase tracking-wider">
+                                Active Turn
+                              </span>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+
                   </div>
                 )}
               </div>
