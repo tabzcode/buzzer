@@ -6,7 +6,6 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-// Lightweight health check endpoint to keep server warm
 app.get('/health', (req, res) => res.status(200).send('OK'));
 
 const server = http.createServer(app);
@@ -36,6 +35,42 @@ function addLog(room, type, message) {
   return logItem;
 }
 
+function stopRoomTimer(room, roomCode) {
+  if (room.timerInterval) {
+    clearInterval(room.timerInterval);
+    room.timerInterval = null;
+  }
+  room.timerActive = false;
+  io.to(roomCode).emit('TIMER_STOPPED');
+}
+
+function startRoomTimer(room, roomCode) {
+  if (!room.timerConfig.enabled || room.queue.length === 0) return;
+
+  stopRoomTimer(room, roomCode);
+
+  let timeLeft = room.timerConfig.duration;
+  room.timerActive = true;
+  const activeTeam = room.queue[0].teamName;
+
+  io.to(roomCode).emit('TIMER_STARTED', { 
+    duration: timeLeft, 
+    activeTeam 
+  });
+
+  room.timerInterval = setInterval(() => {
+    timeLeft -= 1;
+    io.to(roomCode).emit('TIMER_TICK', { timeLeft });
+
+    if (timeLeft <= 0) {
+      stopRoomTimer(room, roomCode);
+      const logItem = addLog(room, 'TIMER', `⏰ Time expired for "${activeTeam}"!`);
+      io.to(roomCode).emit('TIMER_EXPIRED', { activeTeam });
+      io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
+    }
+  }, 1000);
+}
+
 function getAdminRoomList() {
   return Object.values(rooms).map((r) => {
     let totalMembers = 0;
@@ -52,7 +87,8 @@ function getAdminRoomList() {
       status: r.status,
       teamsCount: Object.keys(r.teams || {}).length,
       totalMembers,
-      joinMethod: r.joinMethod || 'Manual ID'
+      joinMethod: r.joinMethod || 'Manual ID',
+      timerConfig: r.timerConfig
     };
   });
 }
@@ -62,8 +98,15 @@ function broadcastAdminUpdate() {
 }
 
 io.on('connection', (socket) => {
-  // 0. QUICK RECONNECT & SYNC
+  // 0. QUICK RECONNECT & SYNC (INCLUDES ROOT ADMIN FIX)
   socket.on('REJOIN_ROOM', ({ roomCode, role, teamName, playerName }) => {
+    if (role === 'ROOT_ADMIN' || roomCode === '0000') {
+      socket.join('ADMIN_ROOM');
+      socket.role = 'ROOT_ADMIN';
+      socket.playerName = playerName || 'Master Admin';
+      return socket.emit('ADMIN_ROOMS_UPDATED', getAdminRoomList());
+    }
+
     const room = rooms[roomCode];
     if (room && room.status === 'ACTIVE') {
       socket.join(roomCode);
@@ -84,13 +127,21 @@ io.on('connection', (socket) => {
         teams: room.teams,
         queue: room.queue,
         logs: room.logs,
-        roundId: room.roundId
+        roundId: room.roundId,
+        timerConfig: room.timerConfig
       });
       broadcastAdminUpdate();
     }
   });
 
-  // 1. CREATE ROOM
+  // 1. MANUAL ADMIN FETCH (ON-DEMAND REFRESH)
+  socket.on('FETCH_ADMIN_ROOMS', () => {
+    if (socket.role === 'ROOT_ADMIN' || socket.rooms.has('ADMIN_ROOM')) {
+      socket.emit('ADMIN_ROOMS_UPDATED', getAdminRoomList());
+    }
+  });
+
+  // 2. CREATE ROOM
   socket.on('CREATE_ROOM', ({ hostName, hostPassword, participantPassword, joinMethod }) => {
     const roomCode = generateRoomCode();
     
@@ -105,7 +156,10 @@ io.on('connection', (socket) => {
       roundId: 1,
       teams: {},
       queue: [],
-      logs: []
+      logs: [],
+      timerConfig: { enabled: false, duration: 30 },
+      timerActive: false,
+      timerInterval: null
     };
 
     socket.join(roomCode);
@@ -114,11 +168,16 @@ io.on('connection', (socket) => {
     socket.playerName = hostName;
 
     addLog(rooms[roomCode], 'ROOM', `Room created by ${hostName}`);
-    socket.emit('ROOM_CREATED', { roomCode, logs: rooms[roomCode].logs, roundId: 1 });
+    socket.emit('ROOM_CREATED', { 
+      roomCode, 
+      logs: rooms[roomCode].logs, 
+      roundId: 1,
+      timerConfig: rooms[roomCode].timerConfig 
+    });
     broadcastAdminUpdate();
   });
 
-  // 2. JOIN AS HOST / ROOT ADMIN CHECK
+  // 3. JOIN AS HOST / ROOT ADMIN CHECK
   socket.on('JOIN_AS_HOST', ({ roomCode, hostName, hostPassword, joinMethod }) => {
     if (roomCode === '0000' && hostPassword === '9676') {
       socket.join('ADMIN_ROOM');
@@ -153,12 +212,13 @@ io.on('connection', (socket) => {
       teams: room.teams, 
       queue: room.queue, 
       logs: room.logs,
-      roundId: room.roundId 
+      roundId: room.roundId,
+      timerConfig: room.timerConfig 
     });
     broadcastAdminUpdate();
   });
 
-  // 3. JOIN AS PARTICIPANT
+  // 4. JOIN AS PARTICIPANT
   socket.on('JOIN_ROOM_INITIAL', ({ roomCode, playerName, participantPassword, joinMethod }) => {
     const room = rooms[roomCode];
     if (!room || room.status === 'CLOSED') {
@@ -181,12 +241,38 @@ io.on('connection', (socket) => {
       teamName: '', 
       teams: room.teams, 
       logs: room.logs,
-      roundId: room.roundId 
+      roundId: room.roundId,
+      timerConfig: room.timerConfig 
     });
     broadcastAdminUpdate();
   });
 
-  // 4. CREATE TEAM
+  // 5. TIMER CONFIGURATION (HOST EXCLUSIVE)
+  socket.on('UPDATE_TIMER_CONFIG', ({ roomCode, enabled, duration }) => {
+    const room = rooms[roomCode];
+    if (!room) return;
+
+    room.timerConfig.enabled = Boolean(enabled);
+    if (duration && Number(duration) > 0) {
+      room.timerConfig.duration = Math.min(300, Math.max(5, Number(duration)));
+    }
+
+    if (!room.timerConfig.enabled) {
+      stopRoomTimer(room, roomCode);
+    }
+
+    const logItem = addLog(
+      room, 
+      'TIMER', 
+      `Host ${room.timerConfig.enabled ? `activated timer (${room.timerConfig.duration}s)` : 'turned timer OFF'}`
+    );
+
+    io.to(roomCode).emit('TIMER_CONFIG_UPDATED', room.timerConfig);
+    io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
+    broadcastAdminUpdate();
+  });
+
+  // 6. CREATE TEAM
   socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -201,7 +287,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 5. JOIN TEAM
+  // 7. JOIN TEAM
   socket.on('JOIN_TEAM_SPECIFIC', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return socket.emit('ERROR', { message: 'Team does not exist!' });
@@ -225,12 +311,13 @@ io.on('connection', (socket) => {
       teamName, 
       teams: room.teams, 
       logs: room.logs,
-      roundId: room.roundId 
+      roundId: room.roundId,
+      timerConfig: room.timerConfig
     });
     broadcastAdminUpdate();
   });
 
-  // 6. ULTRA-FAST LEAN BUZZ HANDLER (<100 BYTES PAYLOAD)
+  // 8. ULTRA-FAST BUZZ HANDLER (AUTO-TRIGGERS TIMER FOR #1)
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName, roundId }, ack) => {
     const room = rooms[roomCode];
     if (!room || room.status !== 'ACTIVE') {
@@ -249,7 +336,6 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Atomic push to in-memory queue
     room.queue.push({
       teamName,
       playerName,
@@ -259,20 +345,24 @@ io.on('connection', (socket) => {
     const rank = room.queue.length;
     addLog(room, 'BUZZ', `⚡ ${teamName} (${playerName}) buzzed in #${rank}!`);
 
-    // Broadcast ONLY queue and roundId (eliminates network choke across 100+ devices)
     io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue, roundId: room.roundId });
 
     if (rank === 1) {
       io.to(roomCode).emit('HOST_ACTION_NOTICE', { message: `⚡ Team "${teamName}" buzzed FIRST (#1)!` });
+      if (room.timerConfig.enabled) {
+        startRoomTimer(room, roomCode);
+      }
     }
 
     if (typeof ack === 'function') ack({ success: true, rank });
   });
 
-  // 7. RESET BUZZERS (INCREMENTS ROUND ID)
+  // 9. RESET BUZZERS
   socket.on('RESET_BUZZER', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room) return;
+
+    stopRoomTimer(room, roomCode);
 
     room.roundId = (room.roundId || 1) + 1;
     room.queue = [];
@@ -282,10 +372,12 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
   });
 
-  // 8. UPDATE SCORE & NEXT QUESTION
+  // 10. UPDATE SCORE & NEXT QUESTION
   socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
+
+    stopRoomTimer(room, roomCode);
 
     room.teams[teamName].score += delta;
     room.roundId = (room.roundId || 1) + 1;
@@ -298,19 +390,25 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
   });
 
-  // 9. PASS TO NEXT
+  // 11. PASS TO NEXT
   socket.on('PASS_TO_NEXT', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.queue.length === 0) return;
+
+    stopRoomTimer(room, roomCode);
 
     const failed = room.queue.shift();
     const logItem = addLog(room, 'BUZZ', `❌ "${failed.teamName}" skipped. Passed to next!`);
 
     io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue, roundId: room.roundId });
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
+
+    if (room.queue.length > 0 && room.timerConfig.enabled) {
+      startRoomTimer(room, roomCode);
+    }
   });
 
-  // 10. LEAVE TEAM
+  // 12. LEAVE TEAM
   socket.on('LEAVE_TEAM', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -325,7 +423,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 11. REMOVE PLAYER
+  // 13. REMOVE PLAYER
   socket.on('REMOVE_PLAYER', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -339,7 +437,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 12. REMOVE TEAM
+  // 14. REMOVE TEAM
   socket.on('REMOVE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -356,9 +454,10 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 13. CLOSE ROOM (ROOT ADMIN)
+  // 15. CLOSE ROOM (ROOT ADMIN)
   socket.on('CLOSE_ROOM', ({ roomCode }) => {
     if (rooms[roomCode]) {
+      stopRoomTimer(rooms[roomCode], roomCode);
       rooms[roomCode].status = 'CLOSED';
       addLog(rooms[roomCode], 'ROOM', 'Room closed by Administrator.');
       
@@ -367,7 +466,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 14. DISCONNECT CLEANUP
+  // 16. DISCONNECT CLEANUP
   socket.on('disconnect', () => {
     const { roomCode, teamName, playerName } = socket;
     if (roomCode && rooms[roomCode]) {
@@ -386,5 +485,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`High-concurrency buzzer server running on port ${PORT}`);
+  console.log(`Buzzer Engine Server running on port ${PORT}`);
 });
