@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
+const APP_VERSION = "v4.0.0";
 
 const playSound = (type) => {
   if (typeof window === 'undefined') return;
@@ -58,8 +59,8 @@ const playSound = (type) => {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState('LANDING'); // LANDING, CREATE_FORM, JOIN_HOST_FORM, JOIN_PARTICIPANT_FORM, GAME, ADMIN_DASHBOARD
-  const [role, setRole] = useState(null); // HOST, PARTICIPANT, ROOT_ADMIN
+  const [screen, setScreen] = useState('LANDING');
+  const [role, setRole] = useState(null);
   const [roomCode, setRoomCode] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   
@@ -519,7 +520,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Confirmation Modal */}
       {confirmModal.open && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-sm w-full p-6 rounded-3xl space-y-4 shadow-2xl text-center">
@@ -540,14 +540,13 @@ export default function App() {
         </div>
       )}
 
-      {/* Members Modal */}
       {membersModalTeam && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-sm w-full p-6 rounded-3xl space-y-4 shadow-2xl">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-sm font-extrabold text-indigo-300 uppercase tracking-wider">Team: {membersModalTeam}</h3>
               <button onClick={() => setMembersModalTeam(null)} className="text-slate-400 hover:text-white text-sm font-bold px-2 py-1 bg-slate-800 rounded-lg">✕</button>
-           </div>
+            </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {teams[membersModalTeam]?.members?.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-4">No members in this team yet.</p>
@@ -617,7 +616,7 @@ export default function App() {
 
             <div className="flex space-x-3 pt-2">
               <button onClick={() => setScreen('JOIN_HOST_FORM')} className="w-1/2 py-3.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/60 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-indigo-300 shadow-md transition-all">
-                <Shield className="w-4 h-4" />
+                <Shield className="w-4 h-4 text-indigo-400" />
                 <span>Join as Host</span>
               </button>
               <button onClick={() => setScreen('JOIN_PARTICIPANT_FORM')} className="w-1/2 py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-slate-200 shadow-md transition-all">
@@ -628,7 +627,8 @@ export default function App() {
           </div>
         </div>
       )}
-{/* CREATE ROOM FORM */}
+
+      {/* CREATE ROOM FORM */}
       {screen === 'CREATE_FORM' && (
         <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
           <div className="flex items-center justify-between">
@@ -670,7 +670,7 @@ export default function App() {
         </div>
       )}
 
-      {/* JOIN AS HOST FORM (GENERIC - ZERO HARDCODED LEAKS) */}
+      {/* JOIN AS HOST FORM */}
       {screen === 'JOIN_HOST_FORM' && (
         <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
           <div className="flex items-center justify-between">
@@ -839,7 +839,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
-        {/* Team Creation */}
+
+                {/* Team Creation */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
                   <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                     <Users className="w-4 h-4 text-indigo-400" />
@@ -1024,7 +1025,9 @@ export default function App() {
                   </div>
                 )}
               </div>
-{/* Scoreboard */}
+            )}
+
+            {/* Scoreboard */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
               <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                 <Trophy className="w-4 h-4 text-amber-400" />
@@ -1212,9 +1215,14 @@ export default function App() {
         </div>
       )}
 
-      <footer className="text-center text-xs text-slate-700 py-2">
-        Developed by Tabres[span_0](start_span)[span_0](end_span)
+      {/* FOOTER WITH DYNAMIC VERSION BADGE */}
+      <footer className="text-center py-4 border-t border-slate-900/60 mt-6 space-y-1">
+        <p className="text-xs text-slate-500 font-semibold">Developed by Tabres</p>
+        <p className="text-[10px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
+          Version {APP_VERSION}
+        </p>
       </footer>
     </div>
   );
-                  }
+}
+           
