@@ -6,7 +6,7 @@ import {
   Shield, Users, RotateCcw, CheckCircle2, XCircle, Sparkles, Volume2, Trophy, 
   Lock, Check, UserMinus, Trash2, ChevronDown, ChevronUp, AlertTriangle, 
   LogOut, Info, KeyRound, Plus, UserPlus, Activity, ArrowLeft, Server, 
-  PlusCircle, MinusCircle, Wifi, WifiOff
+  PlusCircle, MinusCircle, Wifi, WifiOff, Clock, Timer 
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
@@ -36,14 +36,21 @@ const playSound = (type) => {
       gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
       osc.start();
       osc.stop(ctx.currentTime + 0.3);
-    } else if (type === 'WRONG') {
+    } else if (type === 'WRONG' || type === 'TIMEOUT') {
       osc.type = 'square';
-      osc.frequency.setValueAtTime(200, ctx.currentTime);
-      osc.frequency.setValueAtTime(130, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(220, ctx.currentTime);
+      osc.frequency.setValueAtTime(110, ctx.currentTime + 0.2);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(ctx.currentTime + 0.4);
+    } else if (type === 'TICK') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
     }
   } catch (e) {
     console.error("Audio synth error:", e);
@@ -56,7 +63,7 @@ export default function App() {
   const [roomCode, setRoomCode] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   
-  // Forms
+  // Form states
   const [hostName, setHostName] = useState('');
   const [hostPassword, setHostPassword] = useState('');
   const [participantPassword, setParticipantPassword] = useState('');
@@ -65,7 +72,7 @@ export default function App() {
   const [enteredPassword, setEnteredPassword] = useState('');
   const [newTeamName, setNewTeamName] = useState('');
 
-  // Game Data
+  // Game data
   const [teams, setTeams] = useState({});
   const [queue, setQueue] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
@@ -75,7 +82,13 @@ export default function App() {
   const [roundId, setRoundId] = useState(1);
   const [hasBuzzedState, setHasBuzzedState] = useState(false);
   
-  // Modals & Banners
+  // Timer states
+  const [timerConfig, setTimerConfig] = useState({ enabled: false, duration: 30 });
+  const [timerLeft, setTimerLeft] = useState(null);
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [timerActiveTeam, setTimerActiveTeam] = useState('');
+  
+  // Modals & alerts
   const [confirmModal, setConfirmModal] = useState({ open: false, type: '', teamName: '', playerName: '' });
   const [kickedNotice, setKickedNotice] = useState('');
   const [toastMessage, setToastMessage] = useState('');
@@ -86,7 +99,7 @@ export default function App() {
   const roleRef = useRef(role);
   const roomCodeRef = useRef(roomCode);
   const roundIdRef = useRef(1);
-  const buzzedLockRef = useRef(false); // Synchronous 0ms touch lock
+  const buzzedLockRef = useRef(false);
 
   useEffect(() => {
     roleRef.current = role;
@@ -136,7 +149,7 @@ export default function App() {
       setIsConnected(false);
     });
 
-    socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId }) => {
+    socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(syncedRoom);
       setTeams(syncedTeams || {});
       setQueue(syncedQueue || []);
@@ -145,12 +158,13 @@ export default function App() {
         setRoundId(rId);
         roundIdRef.current = rId;
       }
+      if (tConf) setTimerConfig(tConf);
       const isBuzzed = (syncedQueue || []).some(item => item.teamName === teamRef.current);
       buzzedLockRef.current = isBuzzed;
       setHasBuzzedState(isBuzzed);
     });
 
-    socket.on('ROOM_CREATED', ({ roomCode: rCode, logs, roundId: rId }) => {
+    socket.on('ROOM_CREATED', ({ roomCode: rCode, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(rCode);
       setEnteredName(hostName);
       setRole('HOST');
@@ -160,9 +174,10 @@ export default function App() {
         setRoundId(rId);
         roundIdRef.current = rId;
       }
+      if (tConf) setTimerConfig(tConf);
     });
 
-    socket.on('HOST_JOIN_SUCCESS', ({ roomCode: rCode, teams: t, queue: q, logs, roundId: rId }) => {
+    socket.on('HOST_JOIN_SUCCESS', ({ roomCode: rCode, teams: t, queue: q, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(rCode);
       setTeams(t || {});
       setQueue(q || []);
@@ -173,9 +188,10 @@ export default function App() {
         setRoundId(rId);
         roundIdRef.current = rId;
       }
+      if (tConf) setTimerConfig(tConf);
     });
 
-    socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: joinedTeam, teams: t, logs, roundId: rId }) => {
+    socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: joinedTeam, teams: t, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(joinedRoom);
       teamRef.current = joinedTeam || '';
       setTeams(t || {});
@@ -186,6 +202,7 @@ export default function App() {
         setRoundId(rId);
         roundIdRef.current = rId;
       }
+      if (tConf) setTimerConfig(tConf);
     });
 
     socket.on('ADMIN_LOGIN_SUCCESS', ({ adminName, roomsList }) => {
@@ -202,7 +219,6 @@ export default function App() {
     socket.on('ERROR', ({ message }) => alert(message));
     socket.on('TEAMS_UPDATED', (updatedTeams) => setTeams(updatedTeams));
 
-    // High-performance lean queue event
     socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId }) => {
       setQueue(updatedQueue);
       if (currentRId) {
@@ -223,13 +239,42 @@ export default function App() {
       setQueue([]);
       buzzedLockRef.current = false;
       setHasBuzzedState(false);
+      setIsTimerActive(false);
+      setTimerLeft(null);
       if (nextRoundId) {
         setRoundId(nextRoundId);
         roundIdRef.current = nextRoundId;
       }
     });
 
-    // Append single lightweight log instead of rerendering entire history
+    socket.on('TIMER_CONFIG_UPDATED', (conf) => {
+      setTimerConfig(conf);
+    });
+
+    socket.on('TIMER_STARTED', ({ duration, activeTeam }) => {
+      setIsTimerActive(true);
+      setTimerLeft(duration);
+      setTimerActiveTeam(activeTeam);
+    });
+
+    socket.on('TIMER_TICK', ({ timeLeft }) => {
+      setTimerLeft(timeLeft);
+      if (timeLeft <= 5 && timeLeft > 0) playSound('TICK');
+    });
+
+    socket.on('TIMER_EXPIRED', ({ activeTeam }) => {
+      setIsTimerActive(false);
+      setTimerLeft(0);
+      playSound('TIMEOUT');
+      setToastMessage(`⏰ Time expired for "${activeTeam}"!`);
+      setTimeout(() => setToastMessage(''), 4000);
+    });
+
+    socket.on('TIMER_STOPPED', () => {
+      setIsTimerActive(false);
+      setTimerLeft(null);
+    });
+
     socket.on('NEW_ACTIVITY_LOG', (logItem) => {
       setActivityLogs((prev) => [logItem, ...prev.slice(0, 29)]);
     });
@@ -316,6 +361,30 @@ export default function App() {
     });
   };
 
+  const handleToggleTimer = () => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('UPDATE_TIMER_CONFIG', {
+      roomCode,
+      enabled: !timerConfig.enabled,
+      duration: timerConfig.duration
+    });
+  };
+
+  const handleSetTimerDuration = (duration) => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('UPDATE_TIMER_CONFIG', {
+      roomCode,
+      enabled: timerConfig.enabled,
+      duration: Number(duration)
+    });
+  };
+
+  const handleRefreshAdminRooms = () => {
+    if (socketRef.current) {
+      socketRef.current.emit('FETCH_ADMIN_ROOMS');
+    }
+  };
+
   const handleCreateTeam = (e) => {
     e.preventDefault();
     if (!newTeamName.trim()) return;
@@ -365,17 +434,10 @@ export default function App() {
     socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: tName, delta });
   };
 
-  const fillMasterAdmin = () => {
-    setEnteredName('admin');
-    setEnteredRoomCode('0000');
-    setEnteredPassword('9676');
-  };
-
   const myTeamQueueIndex = queue.findIndex((item) => item.teamName === teamRef.current);
   const isBuzzedConfirmed = myTeamQueueIndex !== -1 || hasBuzzedState;
   const myRank = myTeamQueueIndex !== -1 ? myTeamQueueIndex + 1 : (hasBuzzedState ? '...' : null);
 
-  // 0ms SYNCHRONOUS MEMORY LOCK: Prevents multiple taps from queuing up
   const handleBuzz = useCallback((e) => {
     if (e) {
       e.preventDefault();
@@ -386,7 +448,6 @@ export default function App() {
       return;
     }
 
-    // Instant lock
     buzzedLockRef.current = true;
     setHasBuzzedState(true);
 
@@ -434,7 +495,6 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 font-sans selection:bg-indigo-500 relative">
       
-      {/* Real-time Connection Watcher */}
       {!isConnected && (
         <div className="fixed top-0 left-0 right-0 bg-amber-600 text-slate-950 text-xs font-black py-1.5 px-4 text-center flex items-center justify-center space-x-2 z-50 shadow-md">
           <WifiOff className="w-3.5 h-3.5 animate-pulse" />
@@ -487,7 +547,7 @@ export default function App() {
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-sm font-extrabold text-indigo-300 uppercase tracking-wider">Team: {membersModalTeam}</h3>
               <button onClick={() => setMembersModalTeam(null)} className="text-slate-400 hover:text-white text-sm font-bold px-2 py-1 bg-slate-800 rounded-lg">✕</button>
-            </div>
+           </div>
             <div className="space-y-2 max-h-60 overflow-y-auto">
               {teams[membersModalTeam]?.members?.length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-4">No members in this team yet.</p>
@@ -557,7 +617,7 @@ export default function App() {
 
             <div className="flex space-x-3 pt-2">
               <button onClick={() => setScreen('JOIN_HOST_FORM')} className="w-1/2 py-3.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/60 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-indigo-300 shadow-md transition-all">
-                <Shield className="w-4 h-4 text-indigo-400" />
+                <Shield className="w-4 h-4" />
                 <span>Join as Host</span>
               </button>
               <button onClick={() => setScreen('JOIN_PARTICIPANT_FORM')} className="w-1/2 py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-slate-200 shadow-md transition-all">
@@ -568,8 +628,7 @@ export default function App() {
           </div>
         </div>
       )}
-
-      {/* CREATE ROOM FORM */}
+{/* CREATE ROOM FORM */}
       {screen === 'CREATE_FORM' && (
         <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
           <div className="flex items-center justify-between">
@@ -611,7 +670,7 @@ export default function App() {
         </div>
       )}
 
-      {/* JOIN AS HOST FORM */}
+      {/* JOIN AS HOST FORM (GENERIC - ZERO HARDCODED LEAKS) */}
       {screen === 'JOIN_HOST_FORM' && (
         <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
           <div className="flex items-center justify-between">
@@ -624,28 +683,19 @@ export default function App() {
           </div>
 
           <form onSubmit={handleJoinHostSubmit} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl text-left">
-            <button
-              type="button"
-              onClick={fillMasterAdmin}
-              className="w-full py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/40 text-amber-300 font-mono text-xs rounded-xl flex items-center justify-center space-x-2 transition-all"
-            >
-              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-              <span>Quick Fill Master Admin (admin / 0000 / 9676)</span>
-            </button>
-
             <div>
               <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Name</label>
-              <input type="text" placeholder="Enter name or admin" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <input type="text" placeholder="Enter your name" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
               <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Room ID</label>
-              <input type="text" placeholder="6-Digit Code (or 0000 for Admin)" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-base font-mono rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <input type="text" placeholder="6-Digit Room Code" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-base font-mono rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
               <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password</label>
-              <input type="password" maxLength={4} placeholder="4-digit password (e.g. 9676)" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
+              <input type="password" maxLength={4} placeholder="4-digit host password" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
             </div>
 
             <button type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2">
@@ -696,8 +746,34 @@ export default function App() {
       {screen === 'GAME' && (
         <div className="max-w-6xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 py-4">
           <div className="lg:col-span-2 space-y-6">
+
+            {/* SYNCHRONIZED COUNTDOWN CLOCK BANNER */}
+            {timerConfig.enabled && isTimerActive && timerLeft !== null && (
+              <div className={`p-4 rounded-3xl border text-center transition-all duration-300 shadow-2xl flex items-center justify-between px-8 ${
+                timerLeft <= 5 
+                  ? 'bg-rose-950/80 border-rose-500 animate-pulse text-rose-300' 
+                  : timerLeft <= 10 
+                    ? 'bg-amber-950/60 border-amber-500 text-amber-300' 
+                    : 'bg-indigo-950/60 border-indigo-500 text-indigo-200'
+              }`}>
+                <div className="flex items-center space-x-3">
+                  <Timer className={`w-8 h-8 ${timerLeft <= 5 ? 'text-rose-400' : 'text-indigo-400'}`} />
+                  <div className="text-left">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Turn in Progress</p>
+                    <p className="text-sm font-black text-white">{timerActiveTeam || 'Active Team'}</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className="font-mono text-4xl font-black">{timerLeft}s</span>
+                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Remaining</p>
+                </div>
+              </div>
+            )}
+
             {role === 'HOST' && (
               <div className="space-y-6">
+                {/* QR Code & Reset Box */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col items-center space-y-4">
                   <div className="p-3 bg-white rounded-2xl shadow-xl">
                     <QRCodeSVG value={getQrUrl()} size={140} />
@@ -705,10 +781,65 @@ export default function App() {
                   <p className="text-xs text-slate-400">Scan QR Code to Join Room <span className="text-indigo-400 font-mono font-bold">{roomCode}</span></p>
                   <button onClick={() => socketRef.current && socketRef.current.emit('RESET_BUZZER', { roomCode })} className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl font-bold flex items-center justify-center space-x-2 text-indigo-300">
                     <RotateCcw className="w-4 h-4 text-indigo-400" />
-                    <span>Reset All Buzzers (Next Round)</span>
+                    <span>Reset All Buzzers (Next Question)</span>
                   </button>
                 </div>
 
+                {/* HOST TIMER CONTROLLER */}
+                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <div className="flex items-center space-x-2">
+                      <Clock className="w-4 h-4 text-indigo-400" />
+                      <h3 className="text-xs font-bold uppercase text-slate-300 tracking-wider">Answer Timer Settings</h3>
+                    </div>
+                    
+                    <button
+                      onClick={handleToggleTimer}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all ${
+                        timerConfig.enabled 
+                          ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50' 
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${timerConfig.enabled ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                      <span>{timerConfig.enabled ? 'Timer ON' : 'Timer OFF'}</span>
+                    </button>
+                  </div>
+
+                  {timerConfig.enabled && (
+                    <div className="space-y-3 pt-1">
+                      <p className="text-xs text-slate-400">Select duration when a team buzzes in:</p>
+                      <div className="flex flex-wrap gap-2 items-center">
+                        {[10, 15, 30, 45, 60].map((dur) => (
+                          <button
+                            key={dur}
+                            onClick={() => handleSetTimerDuration(dur)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition-all ${
+                              timerConfig.duration === dur 
+                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                                : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                            }`}
+                          >
+                            {dur}s
+                          </button>
+                        ))}
+                        
+                        <div className="flex items-center space-x-2 ml-auto">
+                          <span className="text-xs text-slate-500 font-mono">Custom:</span>
+                          <input
+                            type="number"
+                            min="5"
+                            max="300"
+                            value={timerConfig.duration}
+                            onChange={(e) => handleSetTimerDuration(e.target.value)}
+                            className="w-16 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs font-mono text-center outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+        {/* Team Creation */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
                   <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                     <Users className="w-4 h-4 text-indigo-400" />
@@ -723,6 +854,7 @@ export default function App() {
                   </form>
                 </div>
 
+                {/* Speed Queue */}
                 <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
                   <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                     <Volume2 className="w-4 h-4 text-indigo-400" />
@@ -809,6 +941,14 @@ export default function App() {
                   <div className="w-full flex flex-col items-center space-y-6">
                     <div className="flex items-center justify-between w-full bg-slate-900 border border-slate-800 px-5 py-3 rounded-2xl">
                       <span className="font-bold text-sm text-indigo-300">Team: {teamRef.current}</span>
+                      
+                      {timerConfig.enabled && (
+                        <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 flex items-center space-x-1.5">
+                          <Clock className="w-3 h-3 text-indigo-400" />
+                          <span>Timer: {timerConfig.duration}s</span>
+                        </span>
+                      )}
+
                       <div className="flex items-center space-x-2">
                         <button onClick={() => setMembersModalTeam(teamRef.current)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold flex items-center space-x-1.5">
                           <Users className="w-3.5 h-3.5 text-indigo-400" />
@@ -884,9 +1024,7 @@ export default function App() {
                   </div>
                 )}
               </div>
-            )}
-
-            {/* Scoreboard */}
+{/* Scoreboard */}
             <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
               <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
                 <Trophy className="w-4 h-4 text-amber-400" />
@@ -995,15 +1133,27 @@ export default function App() {
               </h2>
               <p className="text-xs text-slate-400">Real-time monitoring of active and closed rooms across the application.</p>
             </div>
-            <button onClick={() => { setScreen('LANDING'); setRole(null); }} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">
-              Exit Admin Access
-            </button>
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={handleRefreshAdminRooms} 
+                className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-bold rounded-xl border border-indigo-500/40 flex items-center space-x-1.5 transition-all"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+                <span>Refresh List</span>
+              </button>
+              <button 
+                onClick={() => { setScreen('LANDING'); setRole(null); }} 
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700 transition-all"
+              >
+                Exit Admin Access
+              </button>
+            </div>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
             <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
               <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Total Tracked Rooms: {adminRoomsList.length}</span>
-              <span className="text-[11px] text-emerald-400 font-mono font-bold">● LIVE UPDATING SOCKETS</span>
+              <span className="text-[11px] text-emerald-400 font-mono font-bold">● LIVE SOCKET PIPELINE</span>
             </div>
 
             <div className="overflow-x-auto">
@@ -1016,6 +1166,7 @@ export default function App() {
                     <th className="p-4">Participant Pass</th>
                     <th className="p-4">Created Time</th>
                     <th className="p-4">Teams / Members</th>
+                    <th className="p-4">Timer Status</th>
                     <th className="p-4">Status</th>
                     <th className="p-4 text-right">Actions</th>
                   </tr>
@@ -1023,7 +1174,7 @@ export default function App() {
                 <tbody className="divide-y divide-slate-800 text-xs font-medium">
                   {adminRoomsList.length === 0 ? (
                     <tr>
-                      <td colSpan={8} className="text-center py-12 text-slate-500">No rooms created yet.</td>
+                      <td colSpan={9} className="text-center py-12 text-slate-500">No rooms tracked in memory.</td>
                     </tr>
                   ) : (
                     adminRoomsList.map((r) => (
@@ -1034,6 +1185,11 @@ export default function App() {
                         <td className="p-4 font-mono text-emerald-300">{r.participantPassword}</td>
                         <td className="p-4 text-slate-400 text-[11px]">{r.createdAt}</td>
                         <td className="p-4 font-mono text-slate-300">{r.teamsCount} teams ({r.totalMembers} members)</td>
+                        <td className="p-4">
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${r.timerConfig?.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                            {r.timerConfig?.enabled ? `${r.timerConfig.duration}s ON` : 'OFF'}
+                          </span>
+                        </td>
                         <td className="p-4">
                           <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${r.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}`}>
                             {r.status}
@@ -1057,8 +1213,8 @@ export default function App() {
       )}
 
       <footer className="text-center text-xs text-slate-700 py-2">
-        Developed by Tabres
+        Developed by Tabres[span_0](start_span)[span_0](end_span)
       </footer>
     </div>
   );
-}
+                  }
