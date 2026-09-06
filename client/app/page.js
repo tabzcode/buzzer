@@ -6,7 +6,7 @@ import {
   Shield, Users, RotateCcw, CheckCircle2, XCircle, Sparkles, Volume2, Trophy, 
   Lock, Check, UserMinus, Trash2, ChevronDown, ChevronUp, AlertTriangle, 
   LogOut, Info, KeyRound, Plus, UserPlus, Activity, ArrowLeft, Server, 
-  PlusCircle, MinusCircle, Wifi, WifiOff, Clock, Timer 
+  PlusCircle, MinusCircle, WifiOff, Clock, Timer 
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
@@ -54,7 +54,7 @@ const playSound = (type) => {
       osc.stop(ctx.currentTime + 0.05);
     }
   } catch (e) {
-    console.error("Audio synth error:", e);
+    console.error("Audio error:", e);
   }
 };
 
@@ -64,7 +64,7 @@ export default function App() {
   const [roomCode, setRoomCode] = useState('');
   const [isConnected, setIsConnected] = useState(false);
   
-  // Form states
+  // Forms
   const [hostName, setHostName] = useState('');
   const [hostPassword, setHostPassword] = useState('');
   const [participantPassword, setParticipantPassword] = useState('');
@@ -73,7 +73,7 @@ export default function App() {
   const [enteredPassword, setEnteredPassword] = useState('');
   const [newTeamName, setNewTeamName] = useState('');
 
-  // Game data
+  // Game Data
   const [teams, setTeams] = useState({});
   const [queue, setQueue] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
@@ -83,13 +83,13 @@ export default function App() {
   const [roundId, setRoundId] = useState(1);
   const [hasBuzzedState, setHasBuzzedState] = useState(false);
   
-  // Timer states
+  // Timer State
   const [timerConfig, setTimerConfig] = useState({ enabled: false, duration: 30 });
   const [timerLeft, setTimerLeft] = useState(null);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [timerActiveTeam, setTimerActiveTeam] = useState('');
   
-  // Modals & alerts
+  // Modals & Banners
   const [confirmModal, setConfirmModal] = useState({ open: false, type: '', teamName: '', playerName: '' });
   const [kickedNotice, setKickedNotice] = useState('');
   const [toastMessage, setToastMessage] = useState('');
@@ -494,107 +494,109 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-between p-4 font-sans selection:bg-indigo-500 relative">
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col justify-between p-3.5 sm:p-5 font-sans selection:bg-indigo-500 relative">
       
+      {/* Offline Alert */}
       {!isConnected && (
-        <div className="fixed top-0 left-0 right-0 bg-amber-600 text-slate-950 text-xs font-black py-1.5 px-4 text-center flex items-center justify-center space-x-2 z-50 shadow-md">
+        <div className="fixed top-0 left-0 right-0 bg-amber-500 text-slate-950 text-[11px] font-black py-1 px-4 text-center flex items-center justify-center space-x-2 z-50 shadow-md tracking-wide">
           <WifiOff className="w-3.5 h-3.5 animate-pulse" />
           <span>Reconnecting to Game Server... Your buzzer will re-sync automatically.</span>
         </div>
       )}
 
+      {/* Floating Action Notice */}
       {toastMessage && (
-        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 animate-bounce duration-300">
-          <div className="bg-slate-900 border border-indigo-500/80 text-indigo-200 px-5 py-2.5 rounded-xl shadow-2xl flex items-center space-x-3 backdrop-blur-md">
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 animate-bounce duration-300 w-[90%] max-w-sm">
+          <div className="bg-slate-900/95 border border-indigo-500/80 text-indigo-100 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-3 backdrop-blur-xl">
             <Info className="w-4 h-4 text-indigo-400 shrink-0" />
-            <span className="text-xs font-semibold tracking-wide">{toastMessage}</span>
+            <span className="text-xs font-semibold tracking-wide truncate">{toastMessage}</span>
           </div>
         </div>
       )}
 
+      {/* Kicked Alert */}
       {kickedNotice && (
-        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-rose-600/90 border border-rose-500 text-white px-6 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 backdrop-blur-md">
-          <LogOut className="w-5 h-5" />
-          <span className="text-sm font-bold">{kickedNotice}</span>
-          <button onClick={() => setKickedNotice('')} className="ml-4 text-xs bg-rose-800 hover:bg-rose-700 px-2 py-1 rounded-lg">Dismiss</button>
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-rose-950/90 border border-rose-500 text-rose-200 px-5 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 backdrop-blur-xl w-[90%] max-w-sm">
+          <LogOut className="w-4 h-4 shrink-0 text-rose-400" />
+          <span className="text-xs font-bold flex-1">{kickedNotice}</span>
+          <button onClick={() => setKickedNotice('')} className="text-[10px] bg-rose-800 hover:bg-rose-700 px-2 py-1 rounded-lg text-white font-bold">Dismiss</button>
         </div>
       )}
 
+      {/* Confirmation Modal */}
       {confirmModal.open && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 max-w-sm w-full p-6 rounded-3xl space-y-4 shadow-2xl text-center">
-            <div className="w-12 h-12 bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-2xl flex items-center justify-center mx-auto">
-              <AlertTriangle className="w-6 h-6" />
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 max-w-xs w-full p-6 rounded-3xl space-y-4 shadow-2xl text-center">
+            <div className="w-12 h-12 bg-rose-500/10 text-rose-400 border border-rose-500/20 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-extrabold text-white">Are you sure?</h3>
+            <h3 className="text-base font-extrabold text-white">Confirm Removal</h3>
             <p className="text-xs text-slate-400 leading-relaxed">
               {confirmModal.type === 'PLAYER' 
-                ? `Remove player "${confirmModal.playerName}" from team "${confirmModal.teamName}"?`
-                : `Remove team "${confirmModal.teamName}" and all its members?`}
+                ? `Remove "${confirmModal.playerName}" from "${confirmModal.teamName}"?`
+                : `Delete team "${confirmModal.teamName}"?`}
             </p>
-            <div className="flex space-x-3 pt-2">
-              <button onClick={() => setConfirmModal({ open: false, type: '', teamName: '', playerName: '' })} className="w-1/2 py-3 bg-slate-800 hover:bg-slate-700 font-bold text-xs rounded-xl border border-slate-700">Cancel</button>
-              <button onClick={confirmAction} className="w-1/2 py-3 bg-rose-600 hover:bg-rose-500 font-bold text-xs rounded-xl shadow-lg shadow-rose-600/30 text-white">Yes, Remove</button>
+            <div className="flex space-x-2 pt-2">
+              <button onClick={() => setConfirmModal({ open: false, type: '', teamName: '', playerName: '' })} className="w-1/2 py-2.5 bg-slate-800 hover:bg-slate-700 font-bold text-xs rounded-xl border border-slate-700">Cancel</button>
+              <button onClick={confirmAction} className="w-1/2 py-2.5 bg-rose-600 hover:bg-rose-500 font-bold text-xs rounded-xl text-white shadow-lg shadow-rose-600/30">Remove</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* Members Modal */}
       {membersModalTeam && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 max-w-sm w-full p-6 rounded-3xl space-y-4 shadow-2xl">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-extrabold text-indigo-300 uppercase tracking-wider">Team: {membersModalTeam}</h3>
-              <button onClick={() => setMembersModalTeam(null)} className="text-slate-400 hover:text-white text-sm font-bold px-2 py-1 bg-slate-800 rounded-lg">✕</button>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 max-w-xs w-full p-5 rounded-3xl space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-2.5">
+              <h3 className="text-xs font-black text-indigo-300 uppercase tracking-wider">Team: {membersModalTeam}</h3>
+              <button onClick={() => setMembersModalTeam(null)} className="text-slate-400 hover:text-white text-xs font-bold px-2 py-0.5 bg-slate-800 rounded-lg">✕</button>
             </div>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
+            <div className="space-y-1.5 max-h-56 overflow-y-auto">
               {teams[membersModalTeam]?.members?.length === 0 ? (
-                <p className="text-xs text-slate-500 text-center py-4">No members in this team yet.</p>
+                <p className="text-xs text-slate-500 text-center py-4">No members online.</p>
               ) : (
                 teams[membersModalTeam]?.members?.map((m, idx) => (
-                  <div key={idx} className="bg-slate-950 px-4 py-2.5 rounded-xl border border-slate-800 text-xs font-semibold text-slate-200 flex items-center justify-between">
+                  <div key={idx} className="bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-semibold text-slate-200 flex items-center justify-between">
                     <span>{m}</span>
-                    <span className="text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md">Online</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                   </div>
                 ))
               )}
             </div>
-            <button onClick={() => setMembersModalTeam(null)} className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">Close</button>
+            <button onClick={() => setMembersModalTeam(null)} className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">Done</button>
           </div>
         </div>
       )}
 
-      {/* HEADER */}
-      <header className="flex justify-between items-center pb-4 border-b border-slate-800">
+      {/* STREAMLINED HEADER */}
+      <header className="flex justify-between items-center pb-3 border-b border-slate-800/60">
         <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setScreen('LANDING')}>
-          <div className="p-2 bg-indigo-600 rounded-xl">
-            <Sparkles className="w-5 h-5 text-white" />
+          <div className="p-1.5 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-xl shadow-md shadow-indigo-500/20">
+            <Sparkles className="w-4 h-4 text-white" />
           </div>
-          <div className="flex items-center space-x-2">
-            <h1 className="font-extrabold text-lg tracking-wider">BUZZER<span className="text-indigo-400">PRO</span></h1>
-            <span className={`w-2.5 h-2.5 rounded-full ${isConnected ? 'bg-emerald-500 ring-4 ring-emerald-500/20' : 'bg-rose-500 ring-4 ring-rose-500/20'}`} title={isConnected ? 'Connected' : 'Disconnected'} />
+          <div className="flex items-center space-x-1.5">
+            <h1 className="font-black text-base tracking-wider">BUZZER<span className="text-indigo-400">PRO</span></h1>
+            <span className={`w-2 h-2 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-rose-500 animate-pulse'}`} />
           </div>
         </div>
 
         {role === 'ROOT_ADMIN' && (
-          <div className="bg-rose-950 border border-rose-600 px-4 py-1.5 rounded-2xl flex items-center space-x-2">
-            <Shield className="w-4 h-4 text-rose-400" />
-            <span className="text-xs font-black text-rose-200">ROOT ADMIN ACCESS</span>
+          <div className="bg-rose-950/60 border border-rose-600/60 px-3 py-1 rounded-xl flex items-center space-x-1.5">
+            <Shield className="w-3.5 h-3.5 text-rose-400" />
+            <span className="text-[10px] font-black text-rose-300 uppercase">God Mode</span>
           </div>
         )}
 
         {roomCode && role !== 'ROOT_ADMIN' && (
-          <div className="flex items-center space-x-3">
-            <div className="bg-slate-900 border border-slate-700 px-4 py-1.5 rounded-2xl text-right">
-              <div className="text-xs font-mono text-slate-400">ROOM: <span className="text-indigo-400 font-bold">{roomCode}</span></div>
-              <div className="text-xs font-bold text-white">{enteredName || hostName} ({role})</div>
-              <div className="text-[10px] font-extrabold tracking-wider text-amber-400 uppercase">
-                {role === 'HOST' ? 'HOST' : teamRef.current || 'NO TEAM'}
-              </div>
+          <div className="flex items-center space-x-2">
+            <div className="bg-slate-900/90 border border-slate-800 px-3 py-1 rounded-xl text-right flex flex-col justify-center">
+              <span className="text-[9px] font-mono text-slate-400 tracking-wider">ROOM <span className="text-indigo-400 font-black">{roomCode}</span></span>
+              <span className="text-[11px] font-extrabold text-white truncate max-w-[110px]">{enteredName || hostName}</span>
             </div>
             <button 
               onClick={handleLeaveRoom}
-              className="p-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl transition-all"
+              className="p-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl transition-all"
               title="Leave Room"
             >
               <LogOut className="w-4 h-4" />
@@ -605,23 +607,26 @@ export default function App() {
 
       {/* SCREEN 1: LANDING */}
       {screen === 'LANDING' && (
-        <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
-          <h2 className="text-3xl font-extrabold">Trivia Arena</h2>
-          <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl">
-            <p className="text-xs text-slate-400 uppercase font-bold tracking-wider mb-2">Select Your Option</p>
-            <button onClick={() => setScreen('CREATE_FORM')} className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm transition-all">
-              <Shield className="w-5 h-5" />
+        <div className="max-w-sm mx-auto my-auto w-full space-y-5 text-center">
+          <div className="space-y-1">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Trivia Arena</h2>
+            <p className="text-xs text-slate-400 font-medium">Real-time low-latency multiplayer buzzer</p>
+          </div>
+
+          <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 shadow-2xl backdrop-blur-md">
+            <button onClick={() => setScreen('CREATE_FORM')} className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 font-extrabold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-600/25 text-xs tracking-wide uppercase transition-all">
+              <Shield className="w-4 h-4" />
               <span>Create Room (Host)</span>
             </button>
 
-            <div className="flex space-x-3 pt-2">
-              <button onClick={() => setScreen('JOIN_HOST_FORM')} className="w-1/2 py-3.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-700/60 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-indigo-300 shadow-md transition-all">
-                <Shield className="w-4 h-4 text-indigo-400" />
-                <span>Join as Host</span>
+            <div className="flex space-x-2 pt-1">
+              <button onClick={() => setScreen('JOIN_HOST_FORM')} className="w-1/2 py-3 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-700/40 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-indigo-300 transition-all">
+                <Shield className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Join Host</span>
               </button>
-              <button onClick={() => setScreen('JOIN_PARTICIPANT_FORM')} className="w-1/2 py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-slate-200 shadow-md transition-all">
-                <Users className="w-4 h-4 text-emerald-400" />
-                <span>Join as Participant</span>
+              <button onClick={() => setScreen('JOIN_PARTICIPANT_FORM')} className="w-1/2 py-3 bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 font-bold text-xs rounded-xl flex items-center justify-center space-x-1.5 text-slate-200 transition-all">
+                <Users className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Join Player</span>
               </button>
             </div>
           </div>
@@ -630,41 +635,41 @@ export default function App() {
 
       {/* CREATE ROOM FORM */}
       {screen === 'CREATE_FORM' && (
-        <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
-              <ArrowLeft className="w-4 h-4" />
+        <div className="max-w-sm mx-auto my-auto w-full space-y-4 text-center">
+          <div className="flex items-center justify-between px-1">
+            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
+              <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <h2 className="text-xl font-extrabold">Create New Room</h2>
-            <div className="w-12"></div>
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">Create New Room</h2>
+            <div className="w-10"></div>
           </div>
 
-          <form onSubmit={handleCreateRoomSubmit} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl text-left">
+          <form onSubmit={handleCreateRoomSubmit} className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 shadow-2xl text-left backdrop-blur-md">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Name</label>
-              <input type="text" placeholder="Enter your name" value={hostName} onChange={(e) => setHostName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Host Name</label>
+              <input type="text" placeholder="Enter your name" value={hostName} onChange={(e) => setHostName(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password (4 Chars)</label>
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Host Pass (4 Chars)</label>
               <div className="relative">
-                <input type="password" maxLength={4} placeholder="4-digit password" value={hostPassword} onChange={(e) => setHostPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10 tracking-widest font-mono" required />
-                <Lock className="w-4 h-4 text-indigo-400 absolute right-3 top-3.5" />
+                <input type="password" maxLength={4} placeholder="4-digit pass" value={hostPassword} onChange={(e) => setHostPassword(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500 pr-9 tracking-widest font-mono" required />
+                <Lock className="w-3.5 h-3.5 text-indigo-400 absolute right-3 top-3" />
               </div>
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password (4 Chars)</label>
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Player Pass (4 Chars)</label>
               <div className="relative">
-                <input type="password" maxLength={4} placeholder="4-digit password" value={participantPassword} onChange={(e) => setParticipantPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 pr-10 tracking-widest font-mono" required />
-                <KeyRound className="w-4 h-4 text-emerald-400 absolute right-3 top-3.5" />
+                <input type="password" maxLength={4} placeholder="4-digit pass" value={participantPassword} onChange={(e) => setParticipantPassword(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500 pr-9 tracking-widest font-mono" required />
+                <KeyRound className="w-3.5 h-3.5 text-emerald-400 absolute right-3 top-3" />
               </div>
             </div>
 
-            <button type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2">
-              <Shield className="w-4 h-4" />
-              <span>Initialize Room</span>
+            <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 font-extrabold rounded-xl flex items-center justify-center space-x-2 text-xs text-white shadow-lg shadow-indigo-600/30 transition-all mt-1">
+              <Shield className="w-3.5 h-3.5" />
+              <span>Initialize Arena</span>
             </button>
           </form>
         </div>
@@ -672,35 +677,35 @@ export default function App() {
 
       {/* JOIN AS HOST FORM */}
       {screen === 'JOIN_HOST_FORM' && (
-        <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
-              <ArrowLeft className="w-4 h-4" />
+        <div className="max-w-sm mx-auto my-auto w-full space-y-4 text-center">
+          <div className="flex items-center justify-between px-1">
+            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
+              <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <h2 className="text-xl font-extrabold">Join as Host</h2>
-            <div className="w-12"></div>
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">Join as Host</h2>
+            <div className="w-10"></div>
           </div>
 
-          <form onSubmit={handleJoinHostSubmit} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl text-left">
+          <form onSubmit={handleJoinHostSubmit} className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 shadow-2xl text-left backdrop-blur-md">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Name</label>
-              <input type="text" placeholder="Enter your name" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Host Name</label>
+              <input type="text" placeholder="Enter your name" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Room ID</label>
-              <input type="text" placeholder="6-Digit Room Code" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-base font-mono rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Room ID</label>
+              <input type="text" placeholder="6-Digit Room Code" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs font-mono rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Host Password</label>
-              <input type="password" maxLength={4} placeholder="4-digit host password" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Host Password</label>
+              <input type="password" maxLength={4} placeholder="4-digit password" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
             </div>
 
-            <button type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-indigo-500/20 text-sm mt-2">
-              <Shield className="w-4 h-4" />
-              <span>Enter as Co-Host</span>
+            <button type="submit" className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 font-extrabold rounded-xl flex items-center justify-center space-x-2 text-xs text-white shadow-lg shadow-indigo-600/30 transition-all mt-1">
+              <Shield className="w-3.5 h-3.5" />
+              <span>Enter Host Panel</span>
             </button>
           </form>
         </div>
@@ -708,131 +713,130 @@ export default function App() {
 
       {/* JOIN AS PARTICIPANT FORM */}
       {screen === 'JOIN_PARTICIPANT_FORM' && (
-        <div className="max-w-md mx-auto my-auto w-full space-y-6 text-center">
-          <div className="flex items-center justify-between">
-            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
-              <ArrowLeft className="w-4 h-4" />
+        <div className="max-w-sm mx-auto my-auto w-full space-y-4 text-center">
+          <div className="flex items-center justify-between px-1">
+            <button onClick={() => setScreen('LANDING')} className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white flex items-center space-x-1 text-xs font-bold">
+              <ArrowLeft className="w-3.5 h-3.5" />
               <span>Back</span>
             </button>
-            <h2 className="text-xl font-extrabold">Join as Participant</h2>
-            <div className="w-12"></div>
+            <h2 className="text-sm font-black uppercase tracking-wider text-slate-300">Join as Player</h2>
+            <div className="w-10"></div>
           </div>
 
-          <form onSubmit={handleJoinParticipantSubmit} className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 shadow-2xl text-left">
+          <form onSubmit={handleJoinParticipantSubmit} className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 shadow-2xl text-left backdrop-blur-md">
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Your Name</label>
-              <input type="text" placeholder="Enter your name" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Your Name</label>
+              <input type="text" placeholder="Enter your name" value={enteredName} onChange={(e) => setEnteredName(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Room ID</label>
-              <input type="text" placeholder="6-Digit Room Code" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-base font-mono rounded-xl py-3 px-4 outline-none focus:border-indigo-500" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Room ID</label>
+              <input type="text" placeholder="6-Digit Room Code" value={enteredRoomCode} onChange={(e) => setEnteredRoomCode(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs font-mono rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500" required />
             </div>
 
             <div>
-              <label className="text-xs font-bold uppercase text-slate-400 block mb-1">Participant Password (4 Chars)</label>
-              <input type="password" maxLength={4} placeholder="4-digit participant password" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
+              <label className="text-[10px] font-extrabold uppercase text-slate-400 block mb-1 tracking-wider">Player Pass (4 Chars)</label>
+              <input type="password" maxLength={4} placeholder="4-digit password" value={enteredPassword} onChange={(e) => setEnteredPassword(e.target.value)} className="w-full bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2.5 px-3.5 outline-none focus:border-indigo-500 tracking-widest font-mono" required />
             </div>
 
-            <button type="submit" className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 font-bold rounded-2xl flex items-center justify-center space-x-2 shadow-lg shadow-emerald-500/20 text-sm mt-2 text-white">
-              <UserPlus className="w-4 h-4" />
-              <span>Continue to Team Selection</span>
+            <button type="submit" className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 font-extrabold rounded-xl flex items-center justify-center space-x-2 text-xs text-white shadow-lg shadow-emerald-600/30 transition-all mt-1">
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Select Team</span>
             </button>
           </form>
         </div>
       )}
 
-      {/* SCREEN 2: GAME DASHBOARD */}
+      {/* SCREEN 2: GAME ARENA */}
       {screen === 'GAME' && (
-        <div className="max-w-6xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-6 py-4">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="max-w-5xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-5 py-2">
+          <div className="lg:col-span-2 space-y-4">
 
-            {/* SYNCHRONIZED COUNTDOWN CLOCK BANNER */}
+            {/* COUNTDOWN CLOCK BANNER */}
             {timerConfig.enabled && isTimerActive && timerLeft !== null && (
-              <div className={`p-4 rounded-3xl border text-center transition-all duration-300 shadow-2xl flex items-center justify-between px-8 ${
+              <div className={`p-3.5 rounded-2xl border text-center transition-all duration-300 shadow-xl flex items-center justify-between px-6 ${
                 timerLeft <= 5 
-                  ? 'bg-rose-950/80 border-rose-500 animate-pulse text-rose-300' 
+                  ? 'bg-rose-950/90 border-rose-500/80 animate-pulse text-rose-300' 
                   : timerLeft <= 10 
-                    ? 'bg-amber-950/60 border-amber-500 text-amber-300' 
-                    : 'bg-indigo-950/60 border-indigo-500 text-indigo-200'
+                    ? 'bg-amber-950/80 border-amber-500/80 text-amber-300' 
+                    : 'bg-indigo-950/80 border-indigo-500/80 text-indigo-200'
               }`}>
                 <div className="flex items-center space-x-3">
-                  <Timer className={`w-8 h-8 ${timerLeft <= 5 ? 'text-rose-400' : 'text-indigo-400'}`} />
+                  <Timer className={`w-6 h-6 ${timerLeft <= 5 ? 'text-rose-400' : 'text-indigo-400'}`} />
                   <div className="text-left">
-                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-400">Turn in Progress</p>
-                    <p className="text-sm font-black text-white">{timerActiveTeam || 'Active Team'}</p>
+                    <p className="text-[9px] uppercase font-bold tracking-widest text-slate-400">Current Turn</p>
+                    <p className="text-xs font-black text-white truncate max-w-[140px]">{timerActiveTeam || 'Active Team'}</p>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <span className="font-mono text-4xl font-black">{timerLeft}s</span>
-                  <p className="text-[9px] uppercase tracking-wider text-slate-400">Remaining</p>
+                  <span className="font-mono text-3xl font-black">{timerLeft}s</span>
                 </div>
               </div>
             )}
 
+            {/* HOST CONTROLS */}
             {role === 'HOST' && (
-              <div className="space-y-6">
-                {/* QR Code & Reset Box */}
-                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl flex flex-col items-center space-y-4">
-                  <div className="p-3 bg-white rounded-2xl shadow-xl">
-                    <QRCodeSVG value={getQrUrl()} size={140} />
+              <div className="space-y-4">
+                {/* QR & Reset Box */}
+                <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl flex flex-col items-center space-y-3 backdrop-blur-md shadow-xl">
+                  <div className="p-2.5 bg-white rounded-2xl shadow-md">
+                    <QRCodeSVG value={getQrUrl()} size={110} />
                   </div>
-                  <p className="text-xs text-slate-400">Scan QR Code to Join Room <span className="text-indigo-400 font-mono font-bold">{roomCode}</span></p>
-                  <button onClick={() => socketRef.current && socketRef.current.emit('RESET_BUZZER', { roomCode })} className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl font-bold flex items-center justify-center space-x-2 text-indigo-300">
-                    <RotateCcw className="w-4 h-4 text-indigo-400" />
+                  <p className="text-[11px] text-slate-400 font-medium">Scan to join Room <span className="text-indigo-400 font-mono font-bold">{roomCode}</span></p>
+                  <button onClick={() => socketRef.current && socketRef.current.emit('RESET_BUZZER', { roomCode })} className="w-full py-3 bg-slate-800 hover:bg-slate-700/80 border border-slate-700 rounded-xl font-bold flex items-center justify-center space-x-2 text-indigo-300 text-xs shadow-md transition-all">
+                    <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
                     <span>Reset All Buzzers (Next Question)</span>
                   </button>
                 </div>
 
-                {/* HOST TIMER CONTROLLER */}
-                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
-                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                {/* TIMER SETTINGS */}
+                <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-3 backdrop-blur-md">
+                  <div className="flex justify-between items-center border-b border-slate-800/80 pb-2.5">
                     <div className="flex items-center space-x-2">
                       <Clock className="w-4 h-4 text-indigo-400" />
-                      <h3 className="text-xs font-bold uppercase text-slate-300 tracking-wider">Answer Timer Settings</h3>
+                      <h3 className="text-xs font-black uppercase text-slate-300 tracking-wider">Answer Timer</h3>
                     </div>
                     
                     <button
                       onClick={handleToggleTimer}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center space-x-2 transition-all ${
+                      className={`px-3 py-1 rounded-xl font-bold text-[11px] flex items-center space-x-1.5 transition-all ${
                         timerConfig.enabled 
                           ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50' 
                           : 'bg-slate-800 text-slate-400 border border-slate-700'
                       }`}
                     >
-                      <span className={`w-2 h-2 rounded-full ${timerConfig.enabled ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${timerConfig.enabled ? 'bg-emerald-400' : 'bg-slate-500'}`} />
                       <span>{timerConfig.enabled ? 'Timer ON' : 'Timer OFF'}</span>
                     </button>
                   </div>
 
                   {timerConfig.enabled && (
-                    <div className="space-y-3 pt-1">
-                      <p className="text-xs text-slate-400">Select duration when a team buzzes in:</p>
-                      <div className="flex flex-wrap gap-2 items-center">
+                    <div className="space-y-2.5 pt-0.5">
+                      <div className="flex flex-wrap gap-1.5 items-center">
                         {[10, 15, 30, 45, 60].map((dur) => (
                           <button
                             key={dur}
                             onClick={() => handleSetTimerDuration(dur)}
-                            className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold transition-all ${
+                            className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold transition-all ${
                               timerConfig.duration === dur 
-                                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
-                                : 'bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800'
+                                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30' 
+                                : 'bg-slate-950/70 hover:bg-slate-800 text-slate-300 border border-slate-800'
                             }`}
                           >
                             {dur}s
                           </button>
                         ))}
                         
-                        <div className="flex items-center space-x-2 ml-auto">
-                          <span className="text-xs text-slate-500 font-mono">Custom:</span>
+                        <div className="flex items-center space-x-1.5 ml-auto">
+                          <span className="text-[10px] text-slate-500 font-mono">Custom:</span>
                           <input
                             type="number"
                             min="5"
                             max="300"
                             value={timerConfig.duration}
                             onChange={(e) => handleSetTimerDuration(e.target.value)}
-                            className="w-16 bg-slate-950 border border-slate-800 rounded-xl px-2 py-1.5 text-xs font-mono text-center outline-none focus:border-indigo-500"
+                            className="w-14 bg-slate-950/80 border border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-center outline-none focus:border-indigo-500"
                           />
                         </div>
                       </div>
@@ -841,62 +845,60 @@ export default function App() {
                 </div>
 
                 {/* Team Creation */}
-                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
-                  <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
-                    <Users className="w-4 h-4 text-indigo-400" />
-                    <span>Create & Manage Teams</span>
+                <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-2.5 backdrop-blur-md">
+                  <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                    <Users className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Create Team</span>
                   </h3>
-                  <form onSubmit={handleCreateTeam} className="flex space-x-3">
-                    <input type="text" placeholder="Enter new team name" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="flex-1 bg-slate-950 border border-slate-800 text-sm rounded-xl py-3 px-4 outline-none focus:border-indigo-500" />
-                    <button type="submit" className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 font-bold rounded-xl text-xs flex items-center space-x-1 shadow-md">
-                      <Plus className="w-4 h-4" />
-                      <span>Add Team</span>
+                  <form onSubmit={handleCreateTeam} className="flex space-x-2">
+                    <input type="text" placeholder="Enter new team name" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="flex-1 bg-slate-950/80 border border-slate-800 text-xs rounded-xl py-2 px-3 outline-none focus:border-indigo-500" />
+                    <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 font-extrabold rounded-xl text-xs flex items-center space-x-1 shadow-md">
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add</span>
                     </button>
                   </form>
                 </div>
 
                 {/* Speed Queue */}
-                <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
-                  <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
-                    <Volume2 className="w-4 h-4 text-indigo-400" />
-                    <span>Live Speed Queue (Host Control)</span>
+                <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-2.5 backdrop-blur-md">
+                  <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                    <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Live Speed Queue</span>
                   </h3>
                   {queue.length === 0 ? (
-                    <p className="text-slate-500 text-sm py-6 text-center">Waiting for teams to buzz...</p>
+                    <p className="text-slate-500 text-xs py-5 text-center">Waiting for players to buzz...</p>
                   ) : (
                     queue.map((item, index) => (
-                      <div key={index} className={`flex justify-between items-center p-4 rounded-xl border ${index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950 border-slate-800'}`}>
-                        <div className="flex items-center space-x-3">
-                          <span className="font-mono font-bold">#{index + 1}</span>
+                      <div key={index} className={`flex justify-between items-center p-3 rounded-xl border ${index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950/70 border-slate-800/80'}`}>
+                        <div className="flex items-center space-x-2.5">
+                          <span className="font-mono font-black text-xs">#{index + 1}</span>
                           <div>
-                            <p className="font-bold">{item.teamName}</p>
-                            <p className="text-xs text-slate-400">Buzzed by: {item.playerName}</p>
+                            <p className="font-bold text-xs">{item.teamName}</p>
+                            <p className="text-[10px] text-slate-400">By: {item.playerName}</p>
                           </div>
                         </div>
                         
                         {index === 0 && (
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-1.5">
                             <button 
                               onClick={() => {
                                 playSound('CORRECT');
                                 socketRef.current && socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: item.teamName, delta: 5 });
                               }}
-                              className="p-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg flex items-center space-x-1"
-                              title="Correct (+5 pts)"
+                              className="px-2.5 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/40 rounded-lg flex items-center space-x-1 text-xs font-bold"
                             >
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span className="text-xs font-bold">+5</span>
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span>+5</span>
                             </button>
                             <button 
                               onClick={() => {
                                 playSound('WRONG');
                                 socketRef.current && socketRef.current.emit('PASS_TO_NEXT', { roomCode });
                               }}
-                              className="p-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-lg flex items-center space-x-1"
-                              title="Wrong (Pass)"
+                              className="px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-lg flex items-center space-x-1 text-xs font-bold"
                             >
-                              <XCircle className="w-4 h-4" />
-                              <span className="text-xs font-bold">Pass</span>
+                              <XCircle className="w-3.5 h-3.5" />
+                              <span>Pass</span>
                             </button>
                           </div>
                         )}
@@ -907,30 +909,30 @@ export default function App() {
               </div>
             )}
 
+            {/* PARTICIPANT ARENA */}
             {role === 'PARTICIPANT' && (
-              <div className="flex flex-col items-center justify-center space-y-6">
+              <div className="flex flex-col items-center justify-center space-y-5">
                 {!teamRef.current ? (
-                  <div className="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4">
-                    <h3 className="text-sm font-extrabold text-indigo-300 uppercase tracking-wider text-center">Select Your Team</h3>
-                    <p className="text-xs text-slate-400 text-center">Choose a team created by the host to join:</p>
+                  <div className="w-full bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 backdrop-blur-md">
+                    <h3 className="text-xs font-black text-indigo-300 uppercase tracking-wider text-center">Join Your Assigned Team</h3>
                     
-                    <div className="space-y-3 pt-2">
+                    <div className="space-y-2 pt-1">
                       {Object.keys(teams).length === 0 ? (
-                        <p className="text-slate-500 text-xs text-center py-6">No teams created by host yet. Please wait...</p>
+                        <p className="text-slate-500 text-xs text-center py-6">Waiting for the host to create teams...</p>
                       ) : (
                         Object.entries(teams).map(([tName, data]) => (
-                          <div key={tName} className="bg-slate-950 p-4 rounded-2xl border border-slate-800 flex items-center justify-between shadow-md">
+                          <div key={tName} className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800/80 flex items-center justify-between shadow-sm">
                             <div>
-                              <p className="font-bold text-sm text-white">{tName}</p>
-                              <p className="text-xs text-slate-400 font-mono">{data.members.length} members joined</p>
+                              <p className="font-bold text-xs text-white">{tName}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">{data.members.length} members</p>
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <button onClick={() => setMembersModalTeam(tName)} className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700">
-                                <Users className="w-4 h-4" />
+                            <div className="flex items-center space-x-1.5">
+                              <button onClick={() => setMembersModalTeam(tName)} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700">
+                                <Users className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => handleJoinTeam(tName)} className="p-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-lg shadow-indigo-500/30 flex items-center space-x-1">
-                                <Plus className="w-4 h-4" />
-                                <span className="text-xs font-bold pr-1">Join</span>
+                              <button onClick={() => handleJoinTeam(tName)} className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md text-xs font-bold flex items-center space-x-1">
+                                <Plus className="w-3 h-3" />
+                                <span>Join</span>
                               </button>
                             </div>
                           </div>
@@ -939,84 +941,98 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="w-full flex flex-col items-center space-y-6">
-                    <div className="flex items-center justify-between w-full bg-slate-900 border border-slate-800 px-5 py-3 rounded-2xl">
-                      <span className="font-bold text-sm text-indigo-300">Team: {teamRef.current}</span>
-                      
-                      {timerConfig.enabled && (
-                        <span className="text-[11px] font-mono text-slate-400 bg-slate-950 px-2.5 py-1 rounded-lg border border-slate-800 flex items-center space-x-1.5">
-                          <Clock className="w-3 h-3 text-indigo-400" />
-                          <span>Timer: {timerConfig.duration}s</span>
-                        </span>
-                      )}
-
+                  <div className="w-full flex flex-col items-center space-y-4">
+                    
+                    {/* ELEGANT SUB-NAV STATUS STRIP */}
+                    <div className="w-full bg-slate-900/60 border border-slate-800/80 px-4 py-2.5 rounded-2xl backdrop-blur-md flex items-center justify-between shadow-lg">
                       <div className="flex items-center space-x-2">
-                        <button onClick={() => setMembersModalTeam(teamRef.current)} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 rounded-xl text-xs font-semibold flex items-center space-x-1.5">
-                          <Users className="w-3.5 h-3.5 text-indigo-400" />
-                          <span>Teammates</span>
+                        <div className="bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-xl">
+                          <span className="text-[9px] uppercase font-extrabold text-indigo-400 block tracking-wider leading-none">TEAM</span>
+                          <span className="text-xs font-black text-white leading-tight">{teamRef.current}</span>
+                        </div>
+
+                        {timerConfig.enabled && (
+                          <div className="bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-xl flex items-center space-x-1">
+                            <Clock className="w-3 h-3 text-amber-400" />
+                            <span className="text-[11px] font-mono font-bold text-amber-300">{timerConfig.duration}s</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-1.5">
+                        <button onClick={() => setMembersModalTeam(teamRef.current)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
+                          <Users className="w-3 h-3 text-indigo-400" />
+                          <span>Roster</span>
                         </button>
-                        <button onClick={handleLeaveTeam} className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-xl text-xs font-semibold flex items-center space-x-1">
-                          <LogOut className="w-3.5 h-3.5" />
-                          <span>Leave Team</span>
+                        <button onClick={handleLeaveTeam} className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-[11px] font-semibold flex items-center space-x-1 transition-all">
+                          <LogOut className="w-3 h-3" />
+                          <span>Exit</span>
                         </button>
                       </div>
                     </div>
 
-                    <button
-                      onClick={handleBuzz}
-                      onTouchStart={handleBuzz}
-                      disabled={isBuzzedConfirmed}
-                      className={`w-64 h-64 rounded-full border-8 select-none transition-transform active:scale-95 flex items-center justify-center shadow-2xl ${
-                        isBuzzedConfirmed 
-                          ? 'bg-slate-900 border-emerald-500/50 text-emerald-400 cursor-not-allowed pointer-events-none' 
-                          : 'bg-gradient-to-b from-red-500 via-red-600 to-red-800 border-red-400 text-white shadow-red-900/80 active:translate-y-2 cursor-pointer'
-                      }`}
-                      style={{ 
-                        boxShadow: isBuzzedConfirmed ? 'none' : '0 20px 50px rgba(220, 38, 38, 0.5)',
-                        touchAction: 'manipulation'
-                      }}
-                    >
-                      <div className="flex flex-col items-center space-y-1 select-none pointer-events-none">
-                        {isBuzzedConfirmed ? (
-                          <>
-                            <Check className="w-10 h-10 text-emerald-400" />
-                            <span className="text-3xl font-black text-emerald-400 font-mono">#{myRank}</span>
-                            <span className="text-xs font-bold tracking-widest text-emerald-300 uppercase">PRESSED</span>
-                          </>
-                        ) : (
-                          <span className="text-4xl font-black tracking-widest">BUZZ</span>
-                        )}
-                      </div>
-                    </button>
+                    {/* TACTILE 3D BUZZER BUTTON */}
+                    <div className="py-2 flex flex-col items-center justify-center">
+                      <button
+                        onClick={handleBuzz}
+                        onTouchStart={handleBuzz}
+                        disabled={isBuzzedConfirmed}
+                        className={`w-56 h-56 sm:w-60 sm:h-60 rounded-full select-none transition-transform duration-100 active:scale-95 flex items-center justify-center relative ${
+                          isBuzzedConfirmed 
+                            ? 'bg-slate-900 border-4 border-emerald-500/80 shadow-[0_0_40px_rgba(16,185,129,0.25)] cursor-not-allowed pointer-events-none' 
+                            : 'bg-gradient-to-b from-rose-500 via-red-600 to-rose-800 border-4 border-red-400/80 shadow-[0_15px_35px_rgba(225,29,72,0.45)] active:translate-y-1 cursor-pointer'
+                        }`}
+                        style={{ touchAction: 'manipulation' }}
+                      >
+                        {/* Inner highlight rim */}
+                        <div className={`absolute inset-2 rounded-full border border-white/20 pointer-events-none ${isBuzzedConfirmed ? 'hidden' : 'block'}`} />
+                        
+                        <div className="flex flex-col items-center space-y-0.5 select-none pointer-events-none">
+                          {isBuzzedConfirmed ? (
+                            <>
+                              <Check className="w-8 h-8 text-emerald-400" />
+                              <span className="text-3xl font-black text-emerald-400 font-mono tracking-tighter">#{myRank}</span>
+                              <span className="text-[10px] font-extrabold tracking-widest text-emerald-300 uppercase">LOCKED IN</span>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-3xl font-black tracking-widest text-white drop-shadow-md">BUZZ</span>
+                              <span className="text-[9px] font-extrabold tracking-wider text-rose-200/80 uppercase">TOUCH TO HIT</span>
+                            </>
+                          )}
+                        </div>
+                      </button>
+                    </div>
 
-                    <p className="text-xs text-slate-500">
-                      {isBuzzedConfirmed ? `Your team buzzed in at Position #${myRank}! Waiting for host...` : 'Tap to claim response for your team!'}
+                    <p className="text-[11px] font-medium text-slate-500 text-center">
+                      {isBuzzedConfirmed ? `Buzzed at Position #${myRank}! Waiting for host verdict...` : 'Tap buzzer to lock in the turn for your team'}
                     </p>
 
-                    <div className="w-full bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
-                      <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
-                        <Volume2 className="w-4 h-4 text-indigo-400" />
-                        <span>Live Speed Queue</span>
+                    {/* LIVE SPEED QUEUE */}
+                    <div className="w-full bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-2.5 backdrop-blur-md">
+                      <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                        <Volume2 className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Speed Queue</span>
                       </h3>
                       {queue.length === 0 ? (
-                        <p className="text-slate-500 text-xs py-4 text-center">Waiting for teams to buzz...</p>
+                        <p className="text-slate-500 text-xs py-3 text-center">Ready for next question...</p>
                       ) : (
                         queue.map((item, index) => (
-                          <div key={index} className={`flex justify-between items-center p-3 rounded-xl border ${item.teamName === teamRef.current ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' : index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950 border-slate-800'}`}>
-                            <div className="flex items-center space-x-3">
-                              <span className="font-mono font-bold text-sm">#{index + 1}</span>
+                          <div key={index} className={`flex justify-between items-center p-2.5 rounded-xl border ${item.teamName === teamRef.current ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' : index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950/70 border-slate-800/80'}`}>
+                            <div className="flex items-center space-x-2.5">
+                              <span className="font-mono font-black text-xs">#{index + 1}</span>
                               <div>
-                                <p className="font-bold text-sm flex items-center space-x-2">
+                                <p className="font-bold text-xs flex items-center space-x-1.5">
                                   <span>{item.teamName}</span>
                                   {item.teamName === teamRef.current && (
-                                    <span className="text-[10px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded font-mono">YOUR TEAM</span>
+                                    <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1 py-0.2 rounded font-mono">YOU</span>
                                   )}
                                 </p>
-                                <p className="text-[11px] text-slate-400">Buzzed by: {item.playerName}</p>
+                                <p className="text-[10px] text-slate-400">By: {item.playerName}</p>
                               </div>
                             </div>
                             {index === 0 && (
-                              <span className="text-[10px] font-extrabold bg-amber-500/20 text-amber-400 px-2 py-1 rounded-md uppercase tracking-wider">Active Turn</span>
+                              <span className="text-[9px] font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md uppercase tracking-wider">Turn</span>
                             )}
                           </div>
                         ))
@@ -1028,58 +1044,57 @@ export default function App() {
             )}
 
             {/* Scoreboard */}
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-3">
-              <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
-                <Trophy className="w-4 h-4 text-amber-400" />
-                <span>Scoreboard & Team Roster</span>
+            <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-2.5 backdrop-blur-md">
+              <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>Scoreboard</span>
               </h3>
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-1 gap-2">
                 {Object.keys(teams).length === 0 ? (
-                  <p className="text-slate-500 text-xs text-center py-2">No teams registered yet...</p>
+                  <p className="text-slate-500 text-xs text-center py-2">No teams registered yet.</p>
                 ) : (
                   Object.entries(teams).map(([name, data]) => (
-                    <div key={name} className={`bg-slate-950 p-4 rounded-xl border space-y-3 ${name === teamRef.current ? 'border-indigo-500/50' : 'border-slate-800'}`}>
+                    <div key={name} className={`bg-slate-950/70 p-3 rounded-xl border ${name === teamRef.current ? 'border-indigo-500/50' : 'border-slate-800/80'}`}>
                       <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleTeamExpand(name)}>
                         <div>
-                          <p className="font-bold text-sm flex items-center space-x-2">
+                          <p className="font-bold text-xs flex items-center space-x-1.5">
                             <span>{name}</span>
-                            <span className="text-xs text-slate-500 font-normal">({data.members.length} members)</span>
+                            <span className="text-[10px] text-slate-500 font-normal">({data.members.length})</span>
                           </p>
-                          <p className="text-xs text-indigo-400 font-mono font-bold">{data.score} pts</p>
+                          <p className="text-[11px] text-indigo-400 font-mono font-black">{data.score} pts</p>
                         </div>
                         
-                        <div className="flex items-center space-x-2">
+                        <div className="flex items-center space-x-1.5">
                           {role === 'HOST' && (
-                            <div className="flex items-center space-x-1 mr-2" onClick={(e) => e.stopPropagation()}>
-                              <button onClick={() => handleScoreChange(name, -5)} className="p-1 text-slate-400 hover:text-rose-400 bg-slate-900 rounded border border-slate-800" title="Deduct 5 pts">
-                                <MinusCircle className="w-4 h-4" />
+                            <div className="flex items-center space-x-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                              <button onClick={() => handleScoreChange(name, -5)} className="p-1 text-slate-400 hover:text-rose-400 bg-slate-900 rounded border border-slate-800">
+                                <MinusCircle className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => handleScoreChange(name, 5)} className="p-1 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded border border-slate-800" title="Add 5 pts">
-                                <PlusCircle className="w-4 h-4" />
+                              <button onClick={() => handleScoreChange(name, 5)} className="p-1 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded border border-slate-800">
+                                <PlusCircle className="w-3.5 h-3.5" />
                               </button>
                             </div>
                           )}
                           {role === 'HOST' && (
-                            <button onClick={(e) => { e.stopPropagation(); setConfirmModal({ open: true, type: 'TEAM', teamName: name, playerName: '' }); }} className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/30">
-                              <Trash2 className="w-4 h-4" />
+                            <button onClick={(e) => { e.stopPropagation(); setConfirmModal({ open: true, type: 'TEAM', teamName: name, playerName: '' }); }} className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/20">
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                           <button className="text-slate-400 hover:text-white">
-                            {expandedTeams[name] ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            {expandedTeams[name] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       </div>
 
                       {expandedTeams[name] && (
-                        <div className="pt-2 border-t border-slate-900 space-y-2">
-                          <p className="text-xs font-bold uppercase text-slate-500">Active Members</p>
-                          <div className="flex flex-wrap gap-2">
+                        <div className="pt-2 border-t border-slate-800/60 mt-2 space-y-1.5">
+                          <div className="flex flex-wrap gap-1.5">
                             {data.members.map((m, i) => (
-                              <span key={i} className="px-3 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs font-semibold text-slate-300 flex items-center space-x-2">
+                              <span key={i} className="px-2.5 py-0.5 bg-slate-900 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-300 flex items-center space-x-1.5">
                                <span>{m}</span>
                                {role === 'HOST' && (
-                                 <button onClick={() => setConfirmModal({ open: true, type: 'PLAYER', teamName: name, playerName: m })} className="text-slate-500 hover:text-rose-400 ml-1">
-                                   <UserMinus className="w-3 h-3" />
+                                 <button onClick={() => setConfirmModal({ open: true, type: 'PLAYER', teamName: name, playerName: m })} className="text-slate-500 hover:text-rose-400">
+                                   <UserMinus className="w-2.5 h-2.5" />
                                  </button>
                                )}
                               </span>
@@ -1094,28 +1109,28 @@ export default function App() {
             </div>
           </div>
 
-          {/* Activity Broadcast Panel */}
-          <div className="space-y-6">
-            <div className="bg-slate-900 border border-slate-800 p-6 rounded-3xl space-y-4 h-full sticky top-4 flex flex-col">
-              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                <h3 className="text-xs font-bold uppercase text-slate-400 tracking-wider flex items-center space-x-2">
-                  <Activity className="w-4 h-4 text-indigo-400" />
-                  <span>Activity Broadcast</span>
+          {/* Activity Panel */}
+          <div className="space-y-4">
+            <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-3 backdrop-blur-md">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
+                  <Activity className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Activity</span>
                 </h3>
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Live</span>
+                <span className="text-[9px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono font-bold">LIVE</span>
               </div>
 
-              <div className="space-y-2.5 overflow-y-auto max-h-[500px] flex-1 pr-1">
+              <div className="space-y-1.5 overflow-y-auto max-h-56 pr-0.5">
                 {activityLogs.length === 0 ? (
-                  <p className="text-slate-500 text-xs text-center py-8">No activity recorded yet...</p>
+                  <p className="text-slate-500 text-xs text-center py-4">No activity recorded.</p>
                 ) : (
                   activityLogs.map((log, index) => (
-                    <div key={index} className="bg-slate-950 border border-slate-800/80 p-3 rounded-xl text-xs space-y-1 shadow-inner">
-                      <div className="flex justify-between items-center text-[10px] text-slate-500 font-mono">
+                    <div key={index} className="bg-slate-950/70 border border-slate-800/60 p-2.5 rounded-xl text-xs space-y-0.5">
+                      <div className="flex justify-between items-center text-[9px] text-slate-500 font-mono">
                         <span className="text-indigo-400 font-bold">{log.type}</span>
                         <span>{log.time}</span>
                       </div>
-                      <p className="text-slate-300 font-medium leading-relaxed">{log.message}</p>
+                      <p className="text-slate-300 font-medium text-[11px]">{log.message}</p>
                     </div>
                   ))
                 )}
@@ -1127,81 +1142,73 @@ export default function App() {
 
       {/* ROOT ADMIN DASHBOARD */}
       {screen === 'ADMIN_DASHBOARD' && (
-        <div className="max-w-6xl mx-auto my-auto w-full space-y-6 py-4">
-          <div className="flex justify-between items-center bg-slate-900 border border-slate-800 p-6 rounded-3xl shadow-xl">
+        <div className="max-w-5xl mx-auto my-auto w-full space-y-4 py-2">
+          <div className="flex justify-between items-center bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl shadow-xl backdrop-blur-md">
             <div>
-              <h2 className="text-xl font-black text-white flex items-center space-x-2">
-                <Server className="w-6 h-6 text-indigo-400" />
-                <span>System Room Control Center</span>
+              <h2 className="text-base font-black text-white flex items-center space-x-2">
+                <Server className="w-4 h-4 text-indigo-400" />
+                <span>Room Control Center</span>
               </h2>
-              <p className="text-xs text-slate-400">Real-time monitoring of active and closed rooms across the application.</p>
+              <p className="text-[10px] text-slate-400">System telemetry across memory sessions.</p>
             </div>
-            <div className="flex items-center space-x-3">
-              <button 
-                onClick={handleRefreshAdminRooms} 
-                className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-bold rounded-xl border border-indigo-500/40 flex items-center space-x-1.5 transition-all"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>Refresh List</span>
+            <div className="flex items-center space-x-2">
+              <button onClick={handleRefreshAdminRooms} className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-bold rounded-xl border border-indigo-500/40 flex items-center space-x-1 transition-all">
+                <RotateCcw className="w-3 h-3" />
+                <span>Refresh</span>
               </button>
-              <button 
-                onClick={() => { setScreen('LANDING'); setRole(null); }} 
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700 transition-all"
-              >
-                Exit Admin Access
+              <button onClick={() => { setScreen('LANDING'); setRole(null); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">
+                Exit
               </button>
             </div>
           </div>
 
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl">
-            <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-slate-400">Total Tracked Rooms: {adminRoomsList.length}</span>
-              <span className="text-[11px] text-emerald-400 font-mono font-bold">● LIVE SOCKET PIPELINE</span>
+          <div className="bg-slate-900/60 border border-slate-800/80 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-md">
+            <div className="p-3 border-b border-slate-800 flex justify-between items-center bg-slate-950/40">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Rooms: {adminRoomsList.length}</span>
+              <span className="text-[10px] text-emerald-400 font-mono font-bold">● LIVE PIPELINE</span>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="border-b border-slate-800 text-[11px] uppercase text-slate-400 font-bold bg-slate-950">
-                    <th className="p-4">Room ID</th>
-                    <th className="p-4">Created By (Host)</th>
-                    <th className="p-4">Host Pass</th>
-                    <th className="p-4">Participant Pass</th>
-                    <th className="p-4">Created Time</th>
-                    <th className="p-4">Teams / Members</th>
-                    <th className="p-4">Timer Status</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-right">Actions</th>
+                  <tr className="border-b border-slate-800 text-[10px] uppercase text-slate-400 font-black bg-slate-950/60">
+                    <th className="p-3">Room</th>
+                    <th className="p-3">Host</th>
+                    <th className="p-3">Host Pass</th>
+                    <th className="p-3">Player Pass</th>
+                    <th className="p-3">Teams / Members</th>
+                    <th className="p-3">Timer</th>
+                    <th className="p-3">Status</th>
+                    <th className="p-3 text-right">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800 text-xs font-medium">
                   {adminRoomsList.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="text-center py-12 text-slate-500">No rooms tracked in memory.</td>
+                      <td colSpan={8} className="text-center py-8 text-slate-500">No rooms tracked in memory.</td>
                     </tr>
                   ) : (
                     adminRoomsList.map((r) => (
-                      <tr key={r.roomCode} className="hover:bg-slate-800/50 transition-colors">
-                        <td className="p-4 font-mono font-bold text-indigo-400">{r.roomCode}</td>
-                        <td className="p-4 font-bold text-white">{r.hostName}</td>
-                        <td className="p-4 font-mono text-amber-300">{r.hostPassword}</td>
-                        <td className="p-4 font-mono text-emerald-300">{r.participantPassword}</td>
-                        <td className="p-4 text-slate-400 text-[11px]">{r.createdAt}</td>
-                        <td className="p-4 font-mono text-slate-300">{r.teamsCount} teams ({r.totalMembers} members)</td>
-                        <td className="p-4">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-bold ${r.timerConfig?.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
-                            {r.timerConfig?.enabled ? `${r.timerConfig.duration}s ON` : 'OFF'}
+                      <tr key={r.roomCode} className="hover:bg-slate-800/40 transition-colors">
+                        <td className="p-3 font-mono font-bold text-indigo-400">{r.roomCode}</td>
+                        <td className="p-3 font-bold text-white">{r.hostName}</td>
+                        <td className="p-3 font-mono text-amber-300">{r.hostPassword}</td>
+                        <td className="p-3 font-mono text-emerald-300">{r.participantPassword}</td>
+                        <td className="p-3 font-mono text-slate-300">{r.teamsCount} teams ({r.totalMembers} p)</td>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-mono font-bold ${r.timerConfig?.enabled ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'}`}>
+                            {r.timerConfig?.enabled ? `${r.timerConfig.duration}s` : 'OFF'}
                           </span>
                         </td>
-                        <td className="p-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${r.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}`}>
+                        <td className="p-3">
+                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${r.status === 'ACTIVE' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40' : 'bg-rose-500/20 text-rose-400 border border-rose-500/40'}`}>
                             {r.status}
                           </span>
                         </td>
-                        <td className="p-4 text-right">
+                        <td className="p-3 text-right">
                           {r.status === 'ACTIVE' && (
-                            <button onClick={() => handleTerminateRoom(r.roomCode)} className="px-3 py-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-bold">
-                              Terminate
+                            <button onClick={() => handleTerminateRoom(r.roomCode)} className="px-2.5 py-1 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 border border-rose-500/40 rounded-lg text-xs font-bold">
+                              Kill
                             </button>
                           )}
                         </td>
@@ -1215,14 +1222,13 @@ export default function App() {
         </div>
       )}
 
-      {/* FOOTER WITH DYNAMIC VERSION BADGE */}
-      <footer className="text-center py-4 border-t border-slate-900/60 mt-6 space-y-1">
-        <p className="text-xs text-slate-500 font-semibold">Developed by Tabres</p>
-        <p className="text-[10px] font-mono font-bold tracking-widest text-indigo-400 uppercase">
+      {/* REFINED FOOTER */}
+      <footer className="text-center py-3 border-t border-slate-900/60 mt-4 space-y-0.5">
+        <p className="text-xs text-slate-500 font-semibold tracking-wide">Developed by Tabres</p>
+        <p className="text-[10px] font-mono font-bold tracking-widest text-indigo-400/90 uppercase">
           Version {APP_VERSION}
         </p>
       </footer>
     </div>
   );
 }
-           
