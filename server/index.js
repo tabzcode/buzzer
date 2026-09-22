@@ -41,6 +41,7 @@ function stopRoomTimer(room, roomCode) {
     room.timerInterval = null;
   }
   room.timerActive = false;
+  room.timeLeft = null;
   io.to(roomCode).emit('TIMER_STOPPED');
 }
 
@@ -51,6 +52,7 @@ function startRoomTimer(room, roomCode) {
 
   let timeLeft = room.timerConfig.duration;
   room.timerActive = true;
+  room.timeLeft = timeLeft;
   const activeTeam = room.queue[0].teamName;
 
   io.to(roomCode).emit('TIMER_STARTED', { 
@@ -60,12 +62,12 @@ function startRoomTimer(room, roomCode) {
 
   room.timerInterval = setInterval(() => {
     timeLeft -= 1;
+    room.timeLeft = timeLeft;
     io.to(roomCode).emit('TIMER_TICK', { timeLeft });
 
     if (timeLeft <= 0) {
       stopRoomTimer(room, roomCode);
 
-      // Auto-pass the timed-out team
       const timedOutEntry = room.queue.shift();
       const timedOutTeam = timedOutEntry ? timedOutEntry.teamName : activeTeam;
 
@@ -75,7 +77,6 @@ function startRoomTimer(room, roomCode) {
 
       const logItem = addLog(room, 'TIMER', `⏰ Time up for "${timedOutTeam}"!`);
 
-      // Broadcast expiration, queue release, and passed turn
       io.to(roomCode).emit('TIMER_EXPIRED', { activeTeam: timedOutTeam });
       io.to(roomCode).emit('TEAM_PASSED', { 
         passedTeam: timedOutTeam, 
@@ -87,7 +88,6 @@ function startRoomTimer(room, roomCode) {
       });
       io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
 
-      // If next team is in queue, begin their timer
       if (room.queue.length > 0 && room.timerConfig && room.timerConfig.enabled) {
         startRoomTimer(room, roomCode);
       }
@@ -121,7 +121,7 @@ function broadcastAdminUpdate() {
 }
 
 io.on('connection', (socket) => {
-  // AUTO RECONNECT / WAKE SYNC
+  // 0. AUTO RECONNECT & RESYNC ON REFRESH
   socket.on('REJOIN_ROOM', ({ roomCode, role, teamName, playerName }) => {
     if (role === 'ROOT_ADMIN' || roomCode === '0000') {
       socket.join('ADMIN_ROOM');
@@ -130,34 +130,49 @@ io.on('connection', (socket) => {
     }
 
     const room = rooms[roomCode];
-    if (room && room.status === 'ACTIVE') {
-      socket.join(roomCode);
-      socket.roomCode = roomCode;
-      socket.role = role;
-      socket.teamName = teamName;
-      socket.playerName = playerName;
+    if (!room || room.status !== 'ACTIVE') {
+      return socket.emit('ROOM_NOT_FOUND', { message: 'Session expired or room does not exist.' });
+    }
 
-      if (role === 'PARTICIPANT' && teamName && room.teams[teamName]) {
-        const cleanName = (playerName || 'Player').trim();
-        const exists = room.teams[teamName].members.some(
-          m => (typeof m === 'object' ? m.id === socket.id : m === cleanName)
-        );
-        if (!exists) {
-          room.teams[teamName].members.push({ id: socket.id, name: cleanName });
-        }
-        io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
+    socket.join(roomCode);
+    socket.roomCode = roomCode;
+    socket.role = role;
+    socket.teamName = teamName;
+    socket.playerName = playerName;
+
+    // Preserve membership on refresh without duplicating count
+    if (role === 'PARTICIPANT' && teamName && room.teams[teamName]) {
+      const cleanName = (playerName || 'Player').trim();
+      const existingIdx = room.teams[teamName].members.findIndex(
+        m => (typeof m === 'object' ? m.name === cleanName : m === cleanName)
+      );
+
+      if (existingIdx !== -1) {
+        room.teams[teamName].members[existingIdx] = { id: socket.id, name: cleanName };
+      } else {
+        room.teams[teamName].members.push({ id: socket.id, name: cleanName });
       }
 
-      socket.emit('ROOM_SYNCED', {
-        roomCode,
-        teams: room.teams,
-        queue: room.queue,
-        logs: room.logs,
-        roundId: room.roundId,
-        timerConfig: room.timerConfig
-      });
-      broadcastAdminUpdate();
+      io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     }
+
+    socket.emit('ROOM_SYNCED', {
+      roomCode,
+      role,
+      teamName: teamName || '',
+      playerName: playerName || '',
+      teams: room.teams,
+      queue: room.queue,
+      logs: room.logs,
+      roundId: room.roundId,
+      timerConfig: room.timerConfig,
+      timerState: {
+        active: room.timerActive,
+        timeLeft: room.timeLeft,
+        activeTeam: room.queue.length > 0 ? room.queue[0].teamName : ''
+      }
+    });
+    broadcastAdminUpdate();
   });
 
   socket.on('FETCH_ADMIN_ROOMS', () => {
@@ -184,6 +199,7 @@ io.on('connection', (socket) => {
       logs: [],
       timerConfig: { enabled: false, duration: 30 },
       timerActive: false,
+      timeLeft: null,
       timerInterval: null
     };
 
@@ -292,7 +308,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 5. TEAMS CREATION & MEMBER MANAGEMENT
+  // 5. TEAMS CREATION & PARTICIPANT JOIN
   socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -321,7 +337,7 @@ io.on('connection', (socket) => {
     Object.keys(room.teams).forEach((t) => {
       if (Array.isArray(room.teams[t].members)) {
         room.teams[t].members = room.teams[t].members.filter(m => {
-          if (typeof m === 'object' && m !== null) return m.id !== socket.id;
+          if (typeof m === 'object' && m !== null) return m.id !== socket.id && m.name !== cleanName;
           return m !== cleanName;
         });
       } else {
@@ -347,7 +363,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 6. BUZZ HANDLER
+  // 6. ATOMIC BUZZ HANDLER
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName }, ack) => {
     const room = rooms[roomCode];
     if (!room || room.status !== 'ACTIVE') {
@@ -436,7 +452,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('BUZZER_RESET', { roundId: room.roundId });
   });
 
-  // 9. SCORE ADJUSTMENT
+  // 9. SCORE & ADVANCE
   socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -462,7 +478,7 @@ io.on('connection', (socket) => {
 
     const cleanName = (playerName || '').trim();
     room.teams[teamName].members = room.teams[teamName].members.filter(m => {
-      if (typeof m === 'object' && m !== null) return m.id !== socket.id;
+      if (typeof m === 'object' && m !== null) return m.id !== socket.id && m.name !== cleanName;
       return m !== cleanName;
     });
     socket.teamName = '';
@@ -521,5 +537,5 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`v4.4.0 Engine listening on port ${PORT}`);
+  console.log(`v4.5.0 Engine listening on port ${PORT}`);
 });
