@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
-const APP_VERSION = "v4.4.0";
+const APP_VERSION = "v4.5.0";
 
 let audioCtx = null;
 const initAudio = () => {
@@ -88,6 +88,7 @@ export default function App() {
   const [newTeamName, setNewTeamName] = useState('');
 
   // Game Data
+  const [joinedTeam, setJoinedTeam] = useState('');
   const [teams, setTeams] = useState({});
   const [queue, setQueue] = useState([]);
   const [activityLogs, setActivityLogs] = useState([]);
@@ -124,6 +125,11 @@ export default function App() {
   }, [roomCode]);
 
   useEffect(() => {
+    teamRef.current = joinedTeam;
+  }, [joinedTeam]);
+
+  // Audio pre-warming on touch
+  useEffect(() => {
     const handleWarm = () => initAudio();
     window.addEventListener('touchstart', handleWarm, { once: true, passive: true });
     window.addEventListener('click', handleWarm, { once: true, passive: true });
@@ -133,45 +139,21 @@ export default function App() {
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      const qRoom = params.get('room');
-      if (qRoom) setEnteredRoomCode(qRoom);
-
-      try {
-        const savedSession = sessionStorage.getItem('bp_session');
-        if (savedSession) {
-          const parsed = JSON.parse(savedSession);
-          if (parsed.roomCode && parsed.role) {
-            setRoomCode(parsed.roomCode);
-            roomCodeRef.current = parsed.roomCode;
-            setRole(parsed.role);
-            roleRef.current = parsed.role;
-            setEnteredName(parsed.playerName || '');
-            playerRef.current = parsed.playerName || '';
-            teamRef.current = parsed.teamName || '';
-            setScreen('GAME');
-          }
-        }
-      } catch (err) {
-        console.error("Session parse error:", err);
-      }
-    }
-  }, []);
-
+  // HYBRID DUAL STORAGE PERSISTENCE (Handles F5, Mobile Pull-to-Refresh & Sleep-Wake)
   const saveSession = (rCode, rRole, tName, pName) => {
     try {
+      const payload = JSON.stringify({
+        roomCode: rCode,
+        role: rRole,
+        teamName: tName || '',
+        playerName: pName || ''
+      });
       if (typeof window !== 'undefined') {
-        sessionStorage.setItem('bp_session', JSON.stringify({
-          roomCode: rCode,
-          role: rRole,
-          teamName: tName || '',
-          playerName: pName || ''
-        }));
+        sessionStorage.setItem('bp_session', payload);
+        localStorage.setItem('bp_session', payload);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Storage write error:", e);
     }
   };
 
@@ -179,11 +161,46 @@ export default function App() {
     try {
       if (typeof window !== 'undefined') {
         sessionStorage.removeItem('bp_session');
+        localStorage.removeItem('bp_session');
       }
     } catch (e) {
-      console.error(e);
+      console.error("Storage clear error:", e);
     }
   };
+
+  const getSavedSession = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        const raw = sessionStorage.getItem('bp_session') || localStorage.getItem('bp_session');
+        return raw ? JSON.parse(raw) : null;
+      }
+    } catch (e) {
+      return null;
+    }
+    return null;
+  };
+
+  // Restore session immediately upon initial mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const qRoom = params.get('room');
+      if (qRoom) setEnteredRoomCode(qRoom);
+
+      const saved = getSavedSession();
+      if (saved && saved.roomCode && saved.role) {
+        setRoomCode(saved.roomCode);
+        roomCodeRef.current = saved.roomCode;
+        setRole(saved.role);
+        roleRef.current = saved.role;
+        setEnteredName(saved.playerName || '');
+        playerRef.current = saved.playerName || '';
+        setJoinedTeam(saved.teamName || '');
+        teamRef.current = saved.teamName || '';
+        setScreen('GAME');
+      }
+    }
+  }, []);
 
   useEffect(() => {
     socketRef.current = io(SOCKET_URL, { 
@@ -199,31 +216,81 @@ export default function App() {
 
     socket.on('connect', () => {
       setIsConnected(true);
-      if (roomCodeRef.current && roleRef.current) {
+      const saved = getSavedSession();
+      const targetRoom = roomCodeRef.current || (saved && saved.roomCode);
+      const targetRole = roleRef.current || (saved && saved.role);
+      const targetTeam = teamRef.current || (saved && saved.teamName);
+      const targetPlayer = playerRef.current || (saved && saved.playerName);
+
+      if (targetRoom && targetRole) {
         socket.emit('REJOIN_ROOM', {
-          roomCode: roomCodeRef.current,
-          role: roleRef.current,
-          teamName: teamRef.current,
-          playerName: playerRef.current
+          roomCode: targetRoom,
+          role: targetRole,
+          teamName: targetTeam,
+          playerName: targetPlayer
         });
       }
     });
 
     socket.on('disconnect', () => setIsConnected(false));
 
-    socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId, timerConfig: tConf }) => {
+    // COMPLETE REFRESH SYNCHRONIZATION: Restores full room data on reload
+    socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, role: syncedRole, teamName: syncedTeam, playerName: syncedPlayer, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId, timerConfig: tConf, timerState }) => {
       setRoomCode(syncedRoom);
+      roomCodeRef.current = syncedRoom;
+      
+      if (syncedRole) {
+        setRole(syncedRole);
+        roleRef.current = syncedRole;
+      }
+      if (syncedPlayer) {
+        setEnteredName(syncedPlayer);
+        playerRef.current = syncedPlayer;
+      }
+      if (syncedTeam) {
+        setJoinedTeam(syncedTeam);
+        teamRef.current = syncedTeam;
+      }
+
+      setScreen('GAME');
       setTeams({ ...(syncedTeams || {}) });
       setQueue(syncedQueue || []);
       if (syncedLogs) setActivityLogs(syncedLogs);
       if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
       
+      const effectiveTeam = syncedTeam || teamRef.current;
       const isBuzzed = (syncedQueue || []).some(
-        item => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
+        item => (item.teamName || '').trim().toLowerCase() === (effectiveTeam || '').trim().toLowerCase()
       );
       buzzedLockRef.current = isBuzzed;
       setHasBuzzedState(isBuzzed);
+
+      // Restore active timer state on reload
+      if (timerState && timerState.active && timerState.timeLeft !== null) {
+        setIsTimerActive(true);
+        setTimerLeft(timerState.timeLeft);
+        setTimerActiveTeam(timerState.activeTeam || '');
+      } else {
+        setIsTimerActive(false);
+        setTimerLeft(null);
+      }
+
+      saveSession(syncedRoom, syncedRole || roleRef.current, effectiveTeam, syncedPlayer || playerRef.current);
+    });
+
+    socket.on('ROOM_NOT_FOUND', ({ message }) => {
+      clearSession();
+      setScreen('LANDING');
+      setRole(null);
+      setRoomCode('');
+      setJoinedTeam('');
+      teamRef.current = '';
+      playerRef.current = '';
+      buzzedLockRef.current = false;
+      setHasBuzzedState(false);
+      setToastMessage(message || 'Room session expired.');
+      setTimeout(() => setToastMessage(''), 4000);
     });
 
     socket.on('ROOM_CREATED', ({ roomCode: rCode, logs, roundId: rId, timerConfig: tConf }) => {
@@ -250,17 +317,18 @@ export default function App() {
       if (tConf) setTimerConfig(tConf);
     });
 
-    socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: joinedTeam, teams: t, logs, roundId: rId, timerConfig: tConf }) => {
+    socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: teamResult, teams: t, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(joinedRoom);
-      if (joinedTeam) {
-        teamRef.current = joinedTeam;
+      if (teamResult) {
+        setJoinedTeam(teamResult);
+        teamRef.current = teamResult;
         buzzedLockRef.current = false;
         setHasBuzzedState(false);
       }
       setTeams({ ...(t || {}) });
       setRole('PARTICIPANT');
       setScreen('GAME');
-      saveSession(joinedRoom, 'PARTICIPANT', joinedTeam || teamRef.current, playerRef.current);
+      saveSession(joinedRoom, 'PARTICIPANT', teamResult || teamRef.current, playerRef.current);
       if (logs) setActivityLogs(logs);
       if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
@@ -334,14 +402,12 @@ export default function App() {
       if (timeLeft <= 5 && timeLeft > 0) playSound('TICK');
     });
 
-    // TIME'S UP HANDLER: Turns green button back to red
     socket.on('TIMER_EXPIRED', ({ activeTeam }) => {
       setIsTimerActive(true);
       setTimerLeft(0);
       playSound('TIMEOUT');
       setToastMessage(`⏰ TIME UP for "${activeTeam}"!`);
 
-      // Immediately unlock the timed-out team and return button to red
       const myTeam = (teamRef.current || '').trim().toLowerCase();
       if (myTeam && myTeam === (activeTeam || '').trim().toLowerCase()) {
         buzzedLockRef.current = false;
@@ -375,6 +441,7 @@ export default function App() {
         setKickedNotice('Host removed your team.');
         setScreen('LANDING');
         setRole(null);
+        setJoinedTeam('');
         teamRef.current = '';
         buzzedLockRef.current = false;
         setHasBuzzedState(false);
@@ -387,6 +454,7 @@ export default function App() {
         setKickedNotice('Host removed you from the team.');
         setScreen('LANDING');
         setRole(null);
+        setJoinedTeam('');
         teamRef.current = '';
         buzzedLockRef.current = false;
         setHasBuzzedState(false);
@@ -398,6 +466,7 @@ export default function App() {
       setKickedNotice(message);
       setScreen('LANDING');
       setRole(null);
+      setJoinedTeam('');
       teamRef.current = '';
       buzzedLockRef.current = false;
       setHasBuzzedState(false);
@@ -479,6 +548,7 @@ export default function App() {
   };
 
   const handleJoinTeam = (targetTeamName) => {
+    setJoinedTeam(targetTeamName);
     teamRef.current = targetTeamName;
     buzzedLockRef.current = false;
     setHasBuzzedState(false);
@@ -497,6 +567,7 @@ export default function App() {
         teamName: teamRef.current, 
         playerName: playerRef.current || enteredName 
       });
+      setJoinedTeam('');
       teamRef.current = '';
       buzzedLockRef.current = false;
       setHasBuzzedState(false);
@@ -511,6 +582,7 @@ export default function App() {
       setScreen('LANDING');
       setRole(null);
       setRoomCode('');
+      setJoinedTeam('');
       teamRef.current = '';
       playerRef.current = '';
       buzzedLockRef.current = false;
@@ -532,7 +604,7 @@ export default function App() {
   };
 
   const myTeamQueueIndex = queue.findIndex(
-    (item) => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
+    (item) => (item.teamName || '').trim().toLowerCase() === (joinedTeam || teamRef.current || '').trim().toLowerCase()
   );
   
   const isBuzzedConfirmed = myTeamQueueIndex !== -1 || hasBuzzedState;
@@ -544,7 +616,8 @@ export default function App() {
       e.stopPropagation();
     }
 
-    if (buzzedLockRef.current || isBuzzedConfirmed || !socketRef.current || !teamRef.current) {
+    const currentActiveTeam = joinedTeam || teamRef.current;
+    if (buzzedLockRef.current || isBuzzedConfirmed || !socketRef.current || !currentActiveTeam) {
       return;
     }
 
@@ -555,7 +628,7 @@ export default function App() {
 
     socketRef.current.emit('PRESS_BUZZER', { 
       roomCode, 
-      teamName: teamRef.current, 
+      teamName: currentActiveTeam, 
       playerName: playerRef.current || enteredName || 'Player'
     }, (ack) => {
       if (!ack || !ack.success) {
@@ -568,7 +641,7 @@ export default function App() {
         }
       }
     });
-  }, [isBuzzedConfirmed, roomCode, enteredName]);
+  }, [isBuzzedConfirmed, roomCode, enteredName, joinedTeam]);
 
   const confirmAction = () => {
     if (!socketRef.current) return;
@@ -1016,7 +1089,7 @@ export default function App() {
             {/* PARTICIPANT ARENA */}
             {role === 'PARTICIPANT' && (
               <div className="flex flex-col items-center justify-center space-y-5">
-                {!teamRef.current ? (
+                {!joinedTeam ? (
                   <div className="w-full bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl space-y-3.5 backdrop-blur-md">
                     <h3 className="text-xs font-black text-indigo-300 uppercase tracking-wider text-center">Join Your Assigned Team</h3>
                     
@@ -1037,7 +1110,7 @@ export default function App() {
                                   <Users className="w-3.5 h-3.5" />
                                 </button>
                                 <button onClick={() => handleJoinTeam(tName)} className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md text-xs font-bold flex items-center space-x-1">
-                                  <Plus className="w-3 h-3" />
+                                  <Plus className="w-3.5 h-3.5" />
                                   <span>Join</span>
                                 </button>
                               </div>
@@ -1055,7 +1128,7 @@ export default function App() {
                       <div className="flex items-center space-x-2">
                         <div className="bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-xl">
                           <span className="text-[9px] uppercase font-extrabold text-indigo-400 block tracking-wider leading-none">TEAM</span>
-                          <span className="text-xs font-black text-white leading-tight">{teamRef.current}</span>
+                          <span className="text-xs font-black text-white leading-tight">{joinedTeam}</span>
                         </div>
 
                         {timerConfig.enabled && (
@@ -1067,9 +1140,9 @@ export default function App() {
                       </div>
 
                       <div className="flex items-center space-x-1.5">
-                        <button onClick={() => setMembersModalTeam(teamRef.current)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
-                          <Users className="w-3 h-3 text-indigo-400" />
-                          <span>Roster ({(teams[teamRef.current]?.members || []).length})</span>
+                        <button onClick={() => setMembersModalTeam(joinedTeam)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
+                          <Users className="w-3.5 h-3.5 text-indigo-400" />
+                          <span>Roster ({(teams[joinedTeam]?.members || []).length})</span>
                         </button>
                         <button onClick={handleLeaveTeam} className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-[11px] font-semibold flex items-center space-x-1 transition-all">
                           <LogOut className="w-3 h-3" />
@@ -1078,7 +1151,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* TOUCH BUZZER (GREEN WHEN LOCKED, TURNS RED ON TIME UP) */}
+                    {/* TOUCH BUZZER (GREEN WHEN LOCKED, TURNS RED ON PASS/RESET/TIMEOUT) */}
                     <div className="py-2 flex flex-col items-center justify-center">
                       <button
                         onPointerDown={handleBuzz}
@@ -1123,7 +1196,7 @@ export default function App() {
                         <p className="text-slate-500 text-xs py-3 text-center">Ready for next question...</p>
                       ) : (
                         queue.map((item, index) => {
-                          const isMyTeam = (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase();
+                          const isMyTeam = (item.teamName || '').trim().toLowerCase() === (joinedTeam || '').trim().toLowerCase();
                           return (
                             <div key={index} className={`flex justify-between items-center p-2.5 rounded-xl border ${isMyTeam ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' : index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950/70 border-slate-800/80'}`}>
                               <div className="flex items-center space-x-2.5">
@@ -1164,7 +1237,7 @@ export default function App() {
                   Object.entries(teams).map(([name, data]) => {
                     const memberCount = (data.members || []).length;
                     return (
-                      <div key={name} className={`bg-slate-950/70 p-3 rounded-xl border ${name === teamRef.current ? 'border-indigo-500/50' : 'border-slate-800/80'}`}>
+                      <div key={name} className={`bg-slate-950/70 p-3 rounded-xl border ${name === joinedTeam ? 'border-indigo-500/50' : 'border-slate-800/80'}`}>
                         <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleTeamExpand(name)}>
                           <div>
                             <p className="font-bold text-xs flex items-center space-x-1.5">
