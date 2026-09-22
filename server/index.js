@@ -45,7 +45,7 @@ function stopRoomTimer(room, roomCode) {
 }
 
 function startRoomTimer(room, roomCode) {
-  if (!room.timerConfig.enabled || room.queue.length === 0) return;
+  if (!room.timerConfig || !room.timerConfig.enabled || room.queue.length === 0) return;
 
   stopRoomTimer(room, roomCode);
 
@@ -97,12 +97,11 @@ function broadcastAdminUpdate() {
 }
 
 io.on('connection', (socket) => {
-  // REJOIN & AUTO-SYNC
+  // AUTO RECONNECT / WAKE SYNC
   socket.on('REJOIN_ROOM', ({ roomCode, role, teamName, playerName }) => {
     if (role === 'ROOT_ADMIN' || roomCode === '0000') {
       socket.join('ADMIN_ROOM');
       socket.role = 'ROOT_ADMIN';
-      socket.playerName = playerName || 'Master Admin';
       return socket.emit('ADMIN_ROOMS_UPDATED', getAdminRoomList());
     }
 
@@ -115,15 +114,19 @@ io.on('connection', (socket) => {
       socket.playerName = playerName;
 
       if (role === 'PARTICIPANT' && teamName && room.teams[teamName]) {
-        if (!room.teams[teamName].members.includes(playerName)) {
-          room.teams[teamName].members.push(playerName);
+        const cleanName = (playerName || 'Player').trim();
+        const exists = room.teams[teamName].members.some(
+          m => (typeof m === 'object' ? m.id === socket.id : m === cleanName)
+        );
+        if (!exists) {
+          room.teams[teamName].members.push({ id: socket.id, name: cleanName });
         }
         io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
       }
 
       socket.emit('ROOM_SYNCED', {
         roomCode,
-        teams: JSON.parse(JSON.stringify(room.teams)),
+        teams: room.teams,
         queue: room.queue,
         logs: room.logs,
         roundId: room.roundId,
@@ -139,7 +142,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // CREATE ROOM
+  // 1. CREATE ROOM
   socket.on('CREATE_ROOM', ({ hostName, hostPassword, participantPassword }) => {
     const roomCode = generateRoomCode();
     
@@ -175,7 +178,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // JOIN AS HOST
+  // 2. JOIN AS HOST
   socket.on('JOIN_AS_HOST', ({ roomCode, hostName, hostPassword }) => {
     if (roomCode === '0000' && hostPassword === '9676') {
       socket.join('ADMIN_ROOM');
@@ -207,7 +210,7 @@ io.on('connection', (socket) => {
 
     socket.emit('HOST_JOIN_SUCCESS', { 
       roomCode, 
-      teams: JSON.parse(JSON.stringify(room.teams)), 
+      teams: room.teams, 
       queue: room.queue, 
       logs: room.logs,
       roundId: room.roundId,
@@ -216,7 +219,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // JOIN AS PARTICIPANT
+  // 3. JOIN AS PARTICIPANT
   socket.on('JOIN_ROOM_INITIAL', ({ roomCode, playerName, participantPassword }) => {
     const room = rooms[roomCode];
     if (!room || room.status === 'CLOSED') {
@@ -237,7 +240,7 @@ io.on('connection', (socket) => {
     socket.emit('JOIN_SUCCESS', { 
       roomCode, 
       teamName: '', 
-      teams: JSON.parse(JSON.stringify(room.teams)), 
+      teams: room.teams, 
       logs: room.logs,
       roundId: room.roundId,
       timerConfig: room.timerConfig 
@@ -245,7 +248,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // TIMER CONFIG
+  // 4. TIMER CONFIG
   socket.on('UPDATE_TIMER_CONFIG', ({ roomCode, enabled, duration }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -265,13 +268,11 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // TEAMS
+  // 5. TEAMS CREATION & ACCURATE MULTI-MEMBER TRACKING
   socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room) return;
-    const cleanTeam = (teamName || '').trim();
-    if (!cleanTeam) return;
-
+    const cleanTeam = teamName.trim();
     if (room.teams[cleanTeam]) return socket.emit('ERROR', { message: 'Team already exists!' });
 
     room.teams[cleanTeam] = { score: 0, members: [] };
@@ -291,28 +292,33 @@ io.on('connection', (socket) => {
     socket.teamName = teamName;
     socket.playerName = playerName;
 
-    // Remove from other teams
+    const cleanName = (playerName || 'Player').trim();
+
+    // Remove this specific socket from all teams to prevent ghost duplicates
     Object.keys(room.teams).forEach((t) => {
       if (Array.isArray(room.teams[t].members)) {
-        room.teams[t].members = room.teams[t].members.filter((m) => m !== playerName);
+        room.teams[t].members = room.teams[t].members.filter(m => {
+          if (typeof m === 'object' && m !== null) return m.id !== socket.id;
+          return m !== cleanName;
+        });
       } else {
         room.teams[t].members = [];
       }
     });
 
-    if (!room.teams[teamName].members.includes(playerName)) {
-      room.teams[teamName].members.push(playerName);
-    }
+    // Add unique member entry
+    room.teams[teamName].members.push({ id: socket.id, name: cleanName });
 
-    const logItem = addLog(room, 'TEAM', `${playerName} joined "${teamName}"`);
+    const logItem = addLog(room, 'TEAM', `${cleanName} joined "${teamName}"`);
     
+    // Deep clone broadcast ensures every client React state re-renders immediately
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
 
     socket.emit('JOIN_SUCCESS', { 
       roomCode, 
       teamName, 
-      teams: JSON.parse(JSON.stringify(room.teams)), 
+      teams: room.teams, 
       logs: room.logs,
       roundId: room.roundId,
       timerConfig: room.timerConfig
@@ -320,43 +326,51 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // HIGH-CONCURRENCY ZERO-DROP BUZZER HANDLER
+  // 6. HIGH-CONCURRENCY SUB-MILLISECOND BUZZ HANDLER
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName }, ack) => {
     const room = rooms[roomCode];
     if (!room || room.status !== 'ACTIVE') {
       return typeof ack === 'function' && ack({ success: false, reason: 'Inactive room' });
     }
 
+    socket.join(roomCode);
+
     const cleanTeam = (teamName || '').trim();
-    const teamKey = cleanTeam.toLowerCase();
     if (!cleanTeam) {
       return typeof ack === 'function' && ack({ success: false, reason: 'No team specified' });
     }
 
-    // Atomic duplicate check per active round
+    const teamKey = cleanTeam.toLowerCase();
+
+    // O(1) Atomic Deduplication Check
     if (room.buzzedTeamsSet.has(teamKey)) {
       return typeof ack === 'function' && ack({ success: false, reason: 'Already buzzed' });
     }
 
     room.buzzedTeamsSet.add(teamKey);
-    const newEntry = { teamName: cleanTeam, playerName, timestamp: Date.now() };
+    const newEntry = { teamName: cleanTeam, playerName: (playerName || 'Player').trim(), timestamp: Date.now() };
     room.queue.push(newEntry);
     const rank = room.queue.length;
 
-    // Single unified queue broadcast
-    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue, roundId: room.roundId });
+    // Single unified broadcast with rank and target team
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { 
+      queue: room.queue, 
+      roundId: room.roundId,
+      justBuzzed: cleanTeam,
+      buzzerRank: rank
+    });
 
     if (rank === 1) {
       io.to(roomCode).emit('HOST_ACTION_NOTICE', { message: `⚡ Team "${cleanTeam}" buzzed #1!` });
-      if (room.timerConfig.enabled) {
+      if (room.timerConfig && room.timerConfig.enabled) {
         startRoomTimer(room, roomCode);
       }
     }
 
-    if (typeof ack === 'function') ack({ success: true, rank });
+    if (typeof ack === 'function') ack({ success: true, rank, teamName: cleanTeam });
   });
 
-  // PASS TO NEXT (RELEASES PASSED TEAM TO REBUZZ)
+  // 7. PASS TURN (INSTANTLY UNLOCKS PASSED TEAM TO RE-BUZZ)
   socket.on('PASS_TO_NEXT', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.queue.length === 0) return;
@@ -364,22 +378,34 @@ io.on('connection', (socket) => {
     stopRoomTimer(room, roomCode);
 
     const failed = room.queue.shift();
-    if (failed && failed.teamName) {
-      // Free this team so they can rebuzz immediately
-      room.buzzedTeamsSet.delete(failed.teamName.trim().toLowerCase());
+    const passedTeamName = failed ? failed.teamName : '';
+    
+    if (passedTeamName) {
+      // Remove from Set so they are immediately eligible to buzz again
+      room.buzzedTeamsSet.delete(passedTeamName.trim().toLowerCase());
     }
 
-    const logItem = addLog(room, 'BUZZ', `❌ "${failed ? failed.teamName : 'Turn'}" passed!`);
+    const logItem = addLog(room, 'BUZZ', `❌ "${passedTeamName || 'Turn'}" passed!`);
 
-    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: room.queue, roundId: room.roundId });
+    // Dedicated event triggers immediate buzzer unlock on passed participant's screen
+    io.to(roomCode).emit('TEAM_PASSED', { 
+      passedTeam: passedTeamName, 
+      queue: room.queue 
+    });
+    
+    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { 
+      queue: room.queue, 
+      roundId: room.roundId 
+    });
+    
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
 
-    if (room.queue.length > 0 && room.timerConfig.enabled) {
+    if (room.queue.length > 0 && room.timerConfig && room.timerConfig.enabled) {
       startRoomTimer(room, roomCode);
     }
   });
 
-  // RESET BUZZERS (NEXT QUESTION)
+  // 8. RESET BUZZERS (NEXT QUESTION)
   socket.on('RESET_BUZZER', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -391,10 +417,9 @@ io.on('connection', (socket) => {
     room.queue = [];
 
     io.to(roomCode).emit('BUZZER_RESET', { roundId: room.roundId });
-    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: [], roundId: room.roundId });
   });
 
-  // SCORE & NEXT QUESTION
+  // 9. SCORE & ADVANCE
   socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -410,19 +435,22 @@ io.on('connection', (socket) => {
 
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     io.to(roomCode).emit('BUZZER_RESET', { roundId: room.roundId });
-    io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { queue: [], roundId: room.roundId });
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
   });
 
-  // ROSTER ACTIONS
+  // 10. ROSTER MANAGEMENT
   socket.on('LEAVE_TEAM', ({ roomCode, teamName, playerName }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
 
-    room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
+    const cleanName = (playerName || '').trim();
+    room.teams[teamName].members = room.teams[teamName].members.filter(m => {
+      if (typeof m === 'object' && m !== null) return m.id !== socket.id;
+      return m !== cleanName;
+    });
     socket.teamName = '';
 
-    const logItem = addLog(room, 'TEAM', `👋 ${playerName} left "${teamName}"`);
+    const logItem = addLog(room, 'TEAM', `👋 ${cleanName || 'Player'} left "${teamName}"`);
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
     broadcastAdminUpdate();
@@ -432,12 +460,17 @@ io.on('connection', (socket) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
 
-    room.teams[teamName].members = room.teams[teamName].members.filter((m) => m !== playerName);
-    const logItem = addLog(room, 'ADMIN', `Removed "${playerName}" from "${teamName}"`);
+    const cleanName = (playerName || '').trim();
+    room.teams[teamName].members = room.teams[teamName].members.filter(m => {
+      const name = typeof m === 'object' ? m.name : m;
+      return name !== cleanName;
+    });
+
+    const logItem = addLog(room, 'ADMIN', `Removed "${cleanName}" from "${teamName}"`);
 
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
-    io.to(roomCode).emit('PLAYER_REMOVED', { teamName, playerName });
+    io.to(roomCode).emit('PLAYER_REMOVED', { teamName, playerName: cleanName });
     broadcastAdminUpdate();
   });
 
@@ -447,7 +480,7 @@ io.on('connection', (socket) => {
 
     delete room.teams[teamName];
     room.buzzedTeamsSet.delete(teamName.trim().toLowerCase());
-    room.queue = room.queue.filter((i) => i.teamName.trim().toLowerCase() !== teamName.trim().toLowerCase());
+    room.queue = room.queue.filter((i) => i.teamName !== teamName);
 
     const logItem = addLog(room, 'ADMIN', `Deleted team "${teamName}"`);
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
@@ -467,11 +500,11 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Preserve team membership across mobile screen dimming
+    // Keep members in team roster across mobile network drops
   });
 });
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`v4.3.0 Engine listening on port ${PORT}`);
+  console.log(`v4.3.0 Ultra-Concurrency Engine listening on port ${PORT}`);
 });
