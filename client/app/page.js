@@ -10,48 +10,60 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
-const APP_VERSION = "v4.0.0";
+const APP_VERSION = "v4.3.0";
+
+let audioCtx = null;
+const initAudio = () => {
+  if (typeof window === 'undefined') return;
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+};
 
 const playSound = (type) => {
-  if (typeof window === 'undefined') return;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    initAudio();
+    if (!audioCtx) return;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
     osc.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(audioCtx.destination);
 
     if (type === 'BUZZ') {
       osc.type = 'sawtooth';
-      osc.frequency.setValueAtTime(440, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.15);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.25);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(audioCtx.currentTime + 0.25);
     } else if (type === 'CORRECT') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(523.25, ctx.currentTime);
-      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1);
-      gain.gain.setValueAtTime(0.2, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.frequency.setValueAtTime(523.25, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.28);
       osc.start();
-      osc.stop(ctx.currentTime + 0.3);
+      osc.stop(audioCtx.currentTime + 0.28);
     } else if (type === 'WRONG' || type === 'TIMEOUT') {
       osc.type = 'square';
-      osc.frequency.setValueAtTime(220, ctx.currentTime);
-      osc.frequency.setValueAtTime(110, ctx.currentTime + 0.2);
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+      osc.frequency.setValueAtTime(110, audioCtx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.35);
       osc.start();
-      osc.stop(ctx.currentTime + 0.4);
+      osc.stop(audioCtx.currentTime + 0.35);
     } else if (type === 'TICK') {
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(800, ctx.currentTime);
-      gain.gain.setValueAtTime(0.05, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
+      osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.04);
       osc.start();
-      osc.stop(ctx.currentTime + 0.05);
+      osc.stop(audioCtx.currentTime + 0.04);
     }
   } catch (e) {
     console.error("Audio error:", e);
@@ -83,7 +95,7 @@ export default function App() {
   const [roundId, setRoundId] = useState(1);
   const [hasBuzzedState, setHasBuzzedState] = useState(false);
   
-  // Timer State
+  // Timer
   const [timerConfig, setTimerConfig] = useState({ enabled: false, duration: 30 });
   const [timerLeft, setTimerLeft] = useState(null);
   const [isTimerActive, setIsTimerActive] = useState(false);
@@ -99,7 +111,6 @@ export default function App() {
   const playerRef = useRef('');
   const roleRef = useRef(role);
   const roomCodeRef = useRef(roomCode);
-  const roundIdRef = useRef(1);
   const buzzedLockRef = useRef(false);
 
   useEffect(() => {
@@ -110,25 +121,77 @@ export default function App() {
     roomCodeRef.current = roomCode;
   }, [roomCode]);
 
+  // Audio pre-warming on touch
   useEffect(() => {
-    roundIdRef.current = roundId;
-  }, [roundId]);
+    const handleWarm = () => initAudio();
+    window.addEventListener('touchstart', handleWarm, { once: true, passive: true });
+    window.addEventListener('click', handleWarm, { once: true, passive: true });
+    return () => {
+      window.removeEventListener('touchstart', handleWarm);
+      window.removeEventListener('click', handleWarm);
+    };
+  }, []);
 
+  // Auto-restore session if mobile reloads
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const qRoom = params.get('room');
       if (qRoom) setEnteredRoomCode(qRoom);
+
+      try {
+        const savedSession = sessionStorage.getItem('bp_session');
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession);
+          if (parsed.roomCode && parsed.role) {
+            setRoomCode(parsed.roomCode);
+            roomCodeRef.current = parsed.roomCode;
+            setRole(parsed.role);
+            roleRef.current = parsed.role;
+            setEnteredName(parsed.playerName || '');
+            playerRef.current = parsed.playerName || '';
+            teamRef.current = parsed.teamName || '';
+            setScreen('GAME');
+          }
+        }
+      } catch (err) {
+        console.error("Session parse error:", err);
+      }
     }
   }, []);
+
+  const saveSession = (rCode, rRole, tName, pName) => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('bp_session', JSON.stringify({
+          roomCode: rCode,
+          role: rRole,
+          teamName: tName || '',
+          playerName: pName || ''
+        }));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const clearSession = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem('bp_session');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   useEffect(() => {
     socketRef.current = io(SOCKET_URL, { 
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: Infinity,
-      reconnectionDelay: 500,
-      reconnectionDelayMax: 2000,
+      reconnectionDelay: 400,
+      reconnectionDelayMax: 1500,
       timeout: 10000
     });
 
@@ -146,21 +209,19 @@ export default function App() {
       }
     });
 
-    socket.on('disconnect', () => {
-      setIsConnected(false);
-    });
+    socket.on('disconnect', () => setIsConnected(false));
 
     socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(syncedRoom);
-      setTeams(syncedTeams || {});
+      setTeams({ ...(syncedTeams || {}) });
       setQueue(syncedQueue || []);
       if (syncedLogs) setActivityLogs(syncedLogs);
-      if (rId) {
-        setRoundId(rId);
-        roundIdRef.current = rId;
-      }
+      if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
-      const isBuzzed = (syncedQueue || []).some(item => item.teamName === teamRef.current);
+      
+      const isBuzzed = (syncedQueue || []).some(
+        item => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
+      );
       buzzedLockRef.current = isBuzzed;
       setHasBuzzedState(isBuzzed);
     });
@@ -168,41 +229,40 @@ export default function App() {
     socket.on('ROOM_CREATED', ({ roomCode: rCode, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(rCode);
       setEnteredName(hostName);
+      playerRef.current = hostName;
       setRole('HOST');
       setScreen('GAME');
+      saveSession(rCode, 'HOST', '', hostName);
       if (logs) setActivityLogs(logs);
-      if (rId) {
-        setRoundId(rId);
-        roundIdRef.current = rId;
-      }
+      if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
     });
 
     socket.on('HOST_JOIN_SUCCESS', ({ roomCode: rCode, teams: t, queue: q, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(rCode);
-      setTeams(t || {});
+      setTeams({ ...(t || {}) });
       setQueue(q || []);
       setRole('HOST');
       setScreen('GAME');
+      saveSession(rCode, 'HOST', '', playerRef.current);
       if (logs) setActivityLogs(logs);
-      if (rId) {
-        setRoundId(rId);
-        roundIdRef.current = rId;
-      }
+      if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
     });
 
     socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: joinedTeam, teams: t, logs, roundId: rId, timerConfig: tConf }) => {
       setRoomCode(joinedRoom);
-      teamRef.current = joinedTeam || '';
-      setTeams(t || {});
+      if (joinedTeam) {
+        teamRef.current = joinedTeam;
+        buzzedLockRef.current = false;
+        setHasBuzzedState(false);
+      }
+      setTeams({ ...(t || {}) });
       setRole('PARTICIPANT');
       setScreen('GAME');
+      saveSession(joinedRoom, 'PARTICIPANT', joinedTeam || teamRef.current, playerRef.current);
       if (logs) setActivityLogs(logs);
-      if (rId) {
-        setRoundId(rId);
-        roundIdRef.current = rId;
-      }
+      if (rId) setRoundId(rId);
       if (tConf) setTimerConfig(tConf);
     });
 
@@ -218,22 +278,40 @@ export default function App() {
     });
 
     socket.on('ERROR', ({ message }) => alert(message));
-    socket.on('TEAMS_UPDATED', (updatedTeams) => setTeams(updatedTeams));
+    
+    socket.on('TEAMS_UPDATED', (updatedTeams) => {
+      setTeams({ ...updatedTeams });
+    });
 
-    socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId }) => {
-      setQueue(updatedQueue);
-      if (currentRId) {
-        setRoundId(currentRId);
-        roundIdRef.current = currentRId;
+    // ATOMIC QUEUE UPDATE (PLAYS SOUND ONLY FOR #1 BUZZ)
+    socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId, justBuzzed, buzzerRank }) => {
+      setQueue(updatedQueue || []);
+      if (currentRId) setRoundId(currentRId);
+
+      const isMyTeamInQueue = (updatedQueue || []).some(
+        item => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
+      );
+      buzzedLockRef.current = isMyTeamInQueue;
+      setHasBuzzedState(isMyTeamInQueue);
+
+      if (buzzerRank === 1 || (updatedQueue && updatedQueue.length === 1)) {
+        playSound('BUZZ');
       }
+    });
 
-      const isMyTeamInQueue = updatedQueue.some(item => item.teamName === teamRef.current);
-      if (isMyTeamInQueue) {
-        buzzedLockRef.current = true;
-        setHasBuzzedState(true);
+    // INSTANT RE-BUZZ UNLOCK ON PASS
+    socket.on('TEAM_PASSED', ({ passedTeam, queue: newQueue }) => {
+      setQueue(newQueue || []);
+      const myTeam = (teamRef.current || '').trim().toLowerCase();
+      const targetPassed = (passedTeam || '').trim().toLowerCase();
+
+      if (myTeam && myTeam === targetPassed) {
+        buzzedLockRef.current = false;
+        setHasBuzzedState(false);
+        playSound('WRONG');
+        setToastMessage("Turn passed! Your team can buzz again now.");
+        setTimeout(() => setToastMessage(''), 3000);
       }
-
-      if (updatedQueue.length > 0) playSound('BUZZ');
     });
 
     socket.on('BUZZER_RESET', ({ roundId: nextRoundId }) => {
@@ -242,15 +320,10 @@ export default function App() {
       setHasBuzzedState(false);
       setIsTimerActive(false);
       setTimerLeft(null);
-      if (nextRoundId) {
-        setRoundId(nextRoundId);
-        roundIdRef.current = nextRoundId;
-      }
+      if (nextRoundId) setRoundId(nextRoundId);
     });
 
-    socket.on('TIMER_CONFIG_UPDATED', (conf) => {
-      setTimerConfig(conf);
-    });
+    socket.on('TIMER_CONFIG_UPDATED', (conf) => setTimerConfig(conf));
 
     socket.on('TIMER_STARTED', ({ duration, activeTeam }) => {
       setIsTimerActive(true);
@@ -268,7 +341,7 @@ export default function App() {
       setTimerLeft(0);
       playSound('TIMEOUT');
       setToastMessage(`⏰ Time expired for "${activeTeam}"!`);
-      setTimeout(() => setToastMessage(''), 4000);
+      setTimeout(() => setToastMessage(''), 3500);
     });
 
     socket.on('TIMER_STOPPED', () => {
@@ -277,16 +350,17 @@ export default function App() {
     });
 
     socket.on('NEW_ACTIVITY_LOG', (logItem) => {
-      setActivityLogs((prev) => [logItem, ...prev.slice(0, 29)]);
+      setActivityLogs((prev) => [logItem, ...prev.slice(0, 24)]);
     });
 
     socket.on('HOST_ACTION_NOTICE', ({ message }) => {
       setToastMessage(message);
-      setTimeout(() => setToastMessage(''), 4000);
+      setTimeout(() => setToastMessage(''), 3500);
     });
 
     socket.on('TEAM_REMOVED', ({ teamName: removedTeam }) => {
       if (roleRef.current === 'PARTICIPANT' && teamRef.current === removedTeam) {
+        clearSession();
         setKickedNotice('Host removed your team.');
         setScreen('LANDING');
         setRole(null);
@@ -298,6 +372,7 @@ export default function App() {
 
     socket.on('PLAYER_REMOVED', ({ teamName: tName, playerName: pName }) => {
       if (roleRef.current === 'PARTICIPANT' && teamRef.current === tName && playerRef.current === pName) {
+        clearSession();
         setKickedNotice('Host removed you from the team.');
         setScreen('LANDING');
         setRole(null);
@@ -308,6 +383,7 @@ export default function App() {
     });
 
     socket.on('KICKED_OUT', ({ message }) => {
+      clearSession();
       setKickedNotice(message);
       setScreen('LANDING');
       setRole(null);
@@ -323,15 +399,15 @@ export default function App() {
 
   const handleCreateRoomSubmit = (e) => {
     e.preventDefault();
-    if (!hostName || !hostPassword || !participantPassword) return alert('Please fill in all fields!');
+    if (!hostName || !hostPassword || !participantPassword) return alert('Please fill all fields!');
     if (hostPassword.length !== 4 || participantPassword.length !== 4) {
-      return alert('Both passwords must be 4 characters!');
+      return alert('Passwords must be 4 characters!');
     }
     if (hostPassword === participantPassword) {
-      return alert('Host Password and Participant Password CANNOT be the same!');
+      return alert('Host and Player passwords cannot be identical!');
     }
     playerRef.current = hostName;
-    socketRef.current.emit('CREATE_ROOM', { hostName, hostPassword, participantPassword, joinMethod: 'Manual ID' });
+    socketRef.current.emit('CREATE_ROOM', { hostName, hostPassword, participantPassword });
   };
 
   const handleJoinHostSubmit = (e) => {
@@ -343,22 +419,20 @@ export default function App() {
     socketRef.current.emit('JOIN_AS_HOST', { 
       roomCode: targetRoom, 
       hostName: enteredName || 'Host', 
-      hostPassword: enteredPassword, 
-      joinMethod: 'Manual ID' 
+      hostPassword: enteredPassword
     });
   };
 
   const handleJoinParticipantSubmit = (e) => {
     e.preventDefault();
     const targetRoom = enteredRoomCode.trim();
-    if (!targetRoom || !enteredName || !enteredPassword) return alert('Please fill in all fields!');
+    if (!targetRoom || !enteredName || !enteredPassword) return alert('Please fill all fields!');
     
-    playerRef.current = enteredName;
+    playerRef.current = enteredName.trim();
     socketRef.current.emit('JOIN_ROOM_INITIAL', { 
       roomCode: targetRoom, 
-      playerName: enteredName, 
-      participantPassword: enteredPassword, 
-      joinMethod: 'Manual ID' 
+      playerName: enteredName.trim(), 
+      participantPassword: enteredPassword
     });
   };
 
@@ -397,21 +471,32 @@ export default function App() {
     teamRef.current = targetTeamName;
     buzzedLockRef.current = false;
     setHasBuzzedState(false);
-    socketRef.current.emit('JOIN_TEAM_SPECIFIC', { roomCode, teamName: targetTeamName, playerName: enteredName });
+    saveSession(roomCode, 'PARTICIPANT', targetTeamName, playerRef.current || enteredName);
+    socketRef.current.emit('JOIN_TEAM_SPECIFIC', { 
+      roomCode, 
+      teamName: targetTeamName, 
+      playerName: playerRef.current || enteredName || 'Player' 
+    });
   };
 
   const handleLeaveTeam = () => {
     if (socketRef.current && teamRef.current) {
-      socketRef.current.emit('LEAVE_TEAM', { roomCode, teamName: teamRef.current, playerName: enteredName });
+      socketRef.current.emit('LEAVE_TEAM', { 
+        roomCode, 
+        teamName: teamRef.current, 
+        playerName: playerRef.current || enteredName 
+      });
       teamRef.current = '';
       buzzedLockRef.current = false;
       setHasBuzzedState(false);
+      saveSession(roomCode, 'PARTICIPANT', '', playerRef.current || enteredName);
       setTeams((prev) => ({ ...prev }));
     }
   };
 
   const handleLeaveRoom = () => {
-    if (window.confirm("Are you sure you want to exit this room?")) {
+    if (window.confirm("Exit this room?")) {
+      clearSession();
       setScreen('LANDING');
       setRole(null);
       setRoomCode('');
@@ -435,10 +520,15 @@ export default function App() {
     socketRef.current.emit('UPDATE_SCORE_AND_NEXT_QUESTION', { roomCode, teamName: tName, delta });
   };
 
-  const myTeamQueueIndex = queue.findIndex((item) => item.teamName === teamRef.current);
+  const myTeamQueueIndex = queue.findIndex(
+    (item) => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
+  );
+  
+  // Confirmed locked if in queue or optimistic tap active
   const isBuzzedConfirmed = myTeamQueueIndex !== -1 || hasBuzzedState;
-  const myRank = myTeamQueueIndex !== -1 ? myTeamQueueIndex + 1 : (hasBuzzedState ? '...' : null);
+  const myRank = myTeamQueueIndex !== -1 ? myTeamQueueIndex + 1 : (hasBuzzedState ? '1' : null);
 
+  // WIRE-FIRST ATOMIC BUZZ TRIGGER
   const handleBuzz = useCallback((e) => {
     if (e) {
       e.preventDefault();
@@ -452,17 +542,20 @@ export default function App() {
     buzzedLockRef.current = true;
     setHasBuzzedState(true);
 
-    if (navigator.vibrate) navigator.vibrate(100);
-    playSound('BUZZ');
+    if (navigator.vibrate) navigator.vibrate(60);
 
     socketRef.current.emit('PRESS_BUZZER', { 
       roomCode, 
       teamName: teamRef.current, 
-      playerName: enteredName,
-      roundId: roundIdRef.current
+      playerName: playerRef.current || enteredName || 'Player'
     }, (ack) => {
       if (!ack || !ack.success) {
-        if (ack && ack.reason === 'Stale round') {
+        if (ack && ack.reason === 'Already buzzed') {
+          // Teammate beat them to it: keep locked
+          buzzedLockRef.current = true;
+          setHasBuzzedState(true);
+        } else {
+          // General failure: unlock
           buzzedLockRef.current = false;
           setHasBuzzedState(false);
         }
@@ -481,7 +574,7 @@ export default function App() {
   };
 
   const handleTerminateRoom = (targetCode) => {
-    if (confirm(`Terminate Room #${targetCode} permanently?`)) {
+    if (confirm(`Terminate Room #${targetCode}?`)) {
       socketRef.current.emit('CLOSE_ROOM', { roomCode: targetCode });
     }
   };
@@ -493,10 +586,14 @@ export default function App() {
     return roomCode;
   };
 
+  const getMemberName = (m) => {
+    if (typeof m === 'object' && m !== null) return m.name || 'Player';
+    return String(m);
+  };
+
   return (
     <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col justify-between p-3.5 sm:p-5 font-sans selection:bg-indigo-500 relative">
       
-      {/* Offline Alert */}
       {!isConnected && (
         <div className="fixed top-0 left-0 right-0 bg-amber-500 text-slate-950 text-[11px] font-black py-1 px-4 text-center flex items-center justify-center space-x-2 z-50 shadow-md tracking-wide">
           <WifiOff className="w-3.5 h-3.5 animate-pulse" />
@@ -504,7 +601,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Floating Action Notice */}
       {toastMessage && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 animate-bounce duration-300 w-[90%] max-w-sm">
           <div className="bg-slate-900/95 border border-indigo-500/80 text-indigo-100 px-4 py-2.5 rounded-2xl shadow-2xl flex items-center space-x-3 backdrop-blur-xl">
@@ -514,7 +610,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Kicked Alert */}
       {kickedNotice && (
         <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 bg-rose-950/90 border border-rose-500 text-rose-200 px-5 py-3 rounded-2xl shadow-2xl flex items-center space-x-3 backdrop-blur-xl w-[90%] max-w-sm">
           <LogOut className="w-4 h-4 shrink-0 text-rose-400" />
@@ -523,7 +618,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Confirmation Modal */}
       {confirmModal.open && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-xs w-full p-6 rounded-3xl space-y-4 shadow-2xl text-center">
@@ -544,7 +638,6 @@ export default function App() {
         </div>
       )}
 
-      {/* Members Modal */}
       {membersModalTeam && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 max-w-xs w-full p-5 rounded-3xl space-y-4 shadow-2xl">
@@ -553,12 +646,12 @@ export default function App() {
               <button onClick={() => setMembersModalTeam(null)} className="text-slate-400 hover:text-white text-xs font-bold px-2 py-0.5 bg-slate-800 rounded-lg">✕</button>
             </div>
             <div className="space-y-1.5 max-h-56 overflow-y-auto">
-              {teams[membersModalTeam]?.members?.length === 0 ? (
+              {(teams[membersModalTeam]?.members || []).length === 0 ? (
                 <p className="text-xs text-slate-500 text-center py-4">No members online.</p>
               ) : (
                 teams[membersModalTeam]?.members?.map((m, idx) => (
                   <div key={idx} className="bg-slate-950/80 px-3.5 py-2 rounded-xl border border-slate-800/80 text-xs font-semibold text-slate-200 flex items-center justify-between">
-                    <span>{m}</span>
+                    <span>{getMemberName(m)}</span>
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
                   </div>
                 ))
@@ -569,7 +662,7 @@ export default function App() {
         </div>
       )}
 
-      {/* STREAMLINED HEADER */}
+      {/* HEADER */}
       <header className="flex justify-between items-center pb-3 border-b border-slate-800/60">
         <div className="flex items-center space-x-2 cursor-pointer" onClick={() => setScreen('LANDING')}>
           <div className="p-1.5 bg-gradient-to-tr from-indigo-600 to-indigo-500 rounded-xl shadow-md shadow-indigo-500/20">
@@ -592,7 +685,7 @@ export default function App() {
           <div className="flex items-center space-x-2">
             <div className="bg-slate-900/90 border border-slate-800 px-3 py-1 rounded-xl text-right flex flex-col justify-center">
               <span className="text-[9px] font-mono text-slate-400 tracking-wider">ROOM <span className="text-indigo-400 font-black">{roomCode}</span></span>
-              <span className="text-[11px] font-extrabold text-white truncate max-w-[110px]">{enteredName || hostName}</span>
+              <span className="text-[11px] font-extrabold text-white truncate max-w-[110px]">{playerRef.current || enteredName || hostName}</span>
             </div>
             <button 
               onClick={handleLeaveRoom}
@@ -752,7 +845,7 @@ export default function App() {
         <div className="max-w-5xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-5 py-2">
           <div className="lg:col-span-2 space-y-4">
 
-            {/* COUNTDOWN CLOCK BANNER */}
+            {/* COUNTDOWN BANNER */}
             {timerConfig.enabled && isTimerActive && timerLeft !== null && (
               <div className={`p-3.5 rounded-2xl border text-center transition-all duration-300 shadow-xl flex items-center justify-between px-6 ${
                 timerLeft <= 5 
@@ -778,7 +871,6 @@ export default function App() {
             {/* HOST CONTROLS */}
             {role === 'HOST' && (
               <div className="space-y-4">
-                {/* QR & Reset Box */}
                 <div className="bg-slate-900/60 border border-slate-800/80 p-5 rounded-3xl flex flex-col items-center space-y-3 backdrop-blur-md shadow-xl">
                   <div className="p-2.5 bg-white rounded-2xl shadow-md">
                     <QRCodeSVG value={getQrUrl()} size={110} />
@@ -892,7 +984,6 @@ export default function App() {
                             </button>
                             <button 
                               onClick={() => {
-                                playSound('WRONG');
                                 socketRef.current && socketRef.current.emit('PASS_TO_NEXT', { roomCode });
                               }}
                               className="px-2.5 py-1.5 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/40 rounded-lg flex items-center space-x-1 text-xs font-bold"
@@ -920,30 +1011,33 @@ export default function App() {
                       {Object.keys(teams).length === 0 ? (
                         <p className="text-slate-500 text-xs text-center py-6">Waiting for the host to create teams...</p>
                       ) : (
-                        Object.entries(teams).map(([tName, data]) => (
-                          <div key={tName} className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800/80 flex items-center justify-between shadow-sm">
-                            <div>
-                              <p className="font-bold text-xs text-white">{tName}</p>
-                              <p className="text-[10px] text-slate-400 font-mono">{data.members.length} members</p>
+                        Object.entries(teams).map(([tName, data]) => {
+                          const memberCount = (data.members || []).length;
+                          return (
+                            <div key={tName} className="bg-slate-950/70 p-3.5 rounded-2xl border border-slate-800/80 flex items-center justify-between shadow-sm">
+                              <div>
+                                <p className="font-bold text-xs text-white">{tName}</p>
+                                <p className="text-[10px] text-slate-400 font-mono">{memberCount} member{memberCount === 1 ? '' : 's'}</p>
+                              </div>
+                              <div className="flex items-center space-x-1.5">
+                                <button onClick={() => setMembersModalTeam(tName)} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700">
+                                  <Users className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => handleJoinTeam(tName)} className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md text-xs font-bold flex items-center space-x-1">
+                                  <Plus className="w-3 h-3" />
+                                  <span>Join</span>
+                                </button>
+                              </div>
                             </div>
-                            <div className="flex items-center space-x-1.5">
-                              <button onClick={() => setMembersModalTeam(tName)} className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700">
-                                <Users className="w-3.5 h-3.5" />
-                              </button>
-                              <button onClick={() => handleJoinTeam(tName)} className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl shadow-md text-xs font-bold flex items-center space-x-1">
-                                <Plus className="w-3 h-3" />
-                                <span>Join</span>
-                              </button>
-                            </div>
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
                 ) : (
                   <div className="w-full flex flex-col items-center space-y-4">
                     
-                    {/* ELEGANT SUB-NAV STATUS STRIP */}
+                    {/* SUB-NAV STRIP */}
                     <div className="w-full bg-slate-900/60 border border-slate-800/80 px-4 py-2.5 rounded-2xl backdrop-blur-md flex items-center justify-between shadow-lg">
                       <div className="flex items-center space-x-2">
                         <div className="bg-indigo-500/10 border border-indigo-500/30 px-3 py-1 rounded-xl">
@@ -962,7 +1056,7 @@ export default function App() {
                       <div className="flex items-center space-x-1.5">
                         <button onClick={() => setMembersModalTeam(teamRef.current)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
                           <Users className="w-3 h-3 text-indigo-400" />
-                          <span>Roster</span>
+                          <span>Roster ({(teams[teamRef.current]?.members || []).length})</span>
                         </button>
                         <button onClick={handleLeaveTeam} className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-[11px] font-semibold flex items-center space-x-1 transition-all">
                           <LogOut className="w-3 h-3" />
@@ -971,20 +1065,18 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* TACTILE 3D BUZZER BUTTON */}
+                    {/* ULTRA-RESPONSIVE ZERO-LATENCY TOUCH BUZZER */}
                     <div className="py-2 flex flex-col items-center justify-center">
                       <button
-                        onClick={handleBuzz}
-                        onTouchStart={handleBuzz}
+                        onPointerDown={handleBuzz}
                         disabled={isBuzzedConfirmed}
-                        className={`w-56 h-56 sm:w-60 sm:h-60 rounded-full select-none transition-transform duration-100 active:scale-95 flex items-center justify-center relative ${
+                        className={`w-56 h-56 sm:w-60 sm:h-60 rounded-full select-none transition-transform duration-75 active:scale-95 flex items-center justify-center relative ${
                           isBuzzedConfirmed 
                             ? 'bg-slate-900 border-4 border-emerald-500/80 shadow-[0_0_40px_rgba(16,185,129,0.25)] cursor-not-allowed pointer-events-none' 
                             : 'bg-gradient-to-b from-rose-500 via-red-600 to-rose-800 border-4 border-red-400/80 shadow-[0_15px_35px_rgba(225,29,72,0.45)] active:translate-y-1 cursor-pointer'
                         }`}
                         style={{ touchAction: 'manipulation' }}
                       >
-                        {/* Inner highlight rim */}
                         <div className={`absolute inset-2 rounded-full border border-white/20 pointer-events-none ${isBuzzedConfirmed ? 'hidden' : 'block'}`} />
                         
                         <div className="flex flex-col items-center space-y-0.5 select-none pointer-events-none">
@@ -1017,25 +1109,28 @@ export default function App() {
                       {queue.length === 0 ? (
                         <p className="text-slate-500 text-xs py-3 text-center">Ready for next question...</p>
                       ) : (
-                        queue.map((item, index) => (
-                          <div key={index} className={`flex justify-between items-center p-2.5 rounded-xl border ${item.teamName === teamRef.current ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' : index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950/70 border-slate-800/80'}`}>
-                            <div className="flex items-center space-x-2.5">
-                              <span className="font-mono font-black text-xs">#{index + 1}</span>
-                              <div>
-                                <p className="font-bold text-xs flex items-center space-x-1.5">
-                                  <span>{item.teamName}</span>
-                                  {item.teamName === teamRef.current && (
-                                    <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1 py-0.2 rounded font-mono">YOU</span>
-                                  )}
-                                </p>
-                                <p className="text-[10px] text-slate-400">By: {item.playerName}</p>
+                        queue.map((item, index) => {
+                          const isMyTeam = (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase();
+                          return (
+                            <div key={index} className={`flex justify-between items-center p-2.5 rounded-xl border ${isMyTeam ? 'bg-indigo-950/60 border-indigo-500/60 text-indigo-200' : index === 0 ? 'bg-amber-500/10 border-amber-500/40 text-amber-300' : 'bg-slate-950/70 border-slate-800/80'}`}>
+                              <div className="flex items-center space-x-2.5">
+                                <span className="font-mono font-black text-xs">#{index + 1}</span>
+                                <div>
+                                  <p className="font-bold text-xs flex items-center space-x-1.5">
+                                    <span>{item.teamName}</span>
+                                    {isMyTeam && (
+                                      <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1 py-0.2 rounded font-mono">YOU</span>
+                                    )}
+                                  </p>
+                                  <p className="text-[10px] text-slate-400">By: {item.playerName}</p>
+                                </div>
                               </div>
+                              {index === 0 && (
+                                <span className="text-[9px] font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md uppercase tracking-wider">Turn</span>
+                              )}
                             </div>
-                            {index === 0 && (
-                              <span className="text-[9px] font-black bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-md uppercase tracking-wider">Turn</span>
-                            )}
-                          </div>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -1043,7 +1138,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Scoreboard */}
+            {/* SCOREBOARD */}
             <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-2.5 backdrop-blur-md">
               <h3 className="text-[11px] font-black uppercase text-slate-400 tracking-wider flex items-center space-x-1.5">
                 <Trophy className="w-3.5 h-3.5 text-amber-400" />
@@ -1053,63 +1148,69 @@ export default function App() {
                 {Object.keys(teams).length === 0 ? (
                   <p className="text-slate-500 text-xs text-center py-2">No teams registered yet.</p>
                 ) : (
-                  Object.entries(teams).map(([name, data]) => (
-                    <div key={name} className={`bg-slate-950/70 p-3 rounded-xl border ${name === teamRef.current ? 'border-indigo-500/50' : 'border-slate-800/80'}`}>
-                      <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleTeamExpand(name)}>
-                        <div>
-                          <p className="font-bold text-xs flex items-center space-x-1.5">
-                            <span>{name}</span>
-                            <span className="text-[10px] text-slate-500 font-normal">({data.members.length})</span>
-                          </p>
-                          <p className="text-[11px] text-indigo-400 font-mono font-black">{data.score} pts</p>
-                        </div>
-                        
-                        <div className="flex items-center space-x-1.5">
-                          {role === 'HOST' && (
-                            <div className="flex items-center space-x-1 mr-1" onClick={(e) => e.stopPropagation()}>
-                              <button onClick={() => handleScoreChange(name, -5)} className="p-1 text-slate-400 hover:text-rose-400 bg-slate-900 rounded border border-slate-800">
-                                <MinusCircle className="w-3.5 h-3.5" />
+                  Object.entries(teams).map(([name, data]) => {
+                    const memberCount = (data.members || []).length;
+                    return (
+                      <div key={name} className={`bg-slate-950/70 p-3 rounded-xl border ${name === teamRef.current ? 'border-indigo-500/50' : 'border-slate-800/80'}`}>
+                        <div className="flex justify-between items-center cursor-pointer" onClick={() => toggleTeamExpand(name)}>
+                          <div>
+                            <p className="font-bold text-xs flex items-center space-x-1.5">
+                              <span>{name}</span>
+                              <span className="text-[10px] text-slate-500 font-normal">({memberCount})</span>
+                            </p>
+                            <p className="text-[11px] text-indigo-400 font-mono font-black">{data.score} pts</p>
+                          </div>
+                          
+                          <div className="flex items-center space-x-1.5">
+                            {role === 'HOST' && (
+                              <div className="flex items-center space-x-1 mr-1" onClick={(e) => e.stopPropagation()}>
+                                <button onClick={() => handleScoreChange(name, -5)} className="p-1 text-slate-400 hover:text-rose-400 bg-slate-900 rounded border border-slate-800">
+                                  <MinusCircle className="w-3.5 h-3.5" />
+                                </button>
+                                <button onClick={() => handleScoreChange(name, 5)} className="p-1 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded border border-slate-800">
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            )}
+                            {role === 'HOST' && (
+                              <button onClick={(e) => { e.stopPropagation(); setConfirmModal({ open: true, type: 'TEAM', teamName: name, playerName: '' }); }} className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/20">
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
-                              <button onClick={() => handleScoreChange(name, 5)} className="p-1 text-slate-400 hover:text-emerald-400 bg-slate-900 rounded border border-slate-800">
-                                <PlusCircle className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                          {role === 'HOST' && (
-                            <button onClick={(e) => { e.stopPropagation(); setConfirmModal({ open: true, type: 'TEAM', teamName: name, playerName: '' }); }} className="p-1 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 rounded-lg border border-rose-500/20">
-                              <Trash2 className="w-3.5 h-3.5" />
+                            )}
+                            <button className="text-slate-400 hover:text-white">
+                              {expandedTeams[name] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                             </button>
-                          )}
-                          <button className="text-slate-400 hover:text-white">
-                            {expandedTeams[name] ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
-                        </div>
-                      </div>
-
-                      {expandedTeams[name] && (
-                        <div className="pt-2 border-t border-slate-800/60 mt-2 space-y-1.5">
-                          <div className="flex flex-wrap gap-1.5">
-                            {data.members.map((m, i) => (
-                              <span key={i} className="px-2.5 py-0.5 bg-slate-900 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-300 flex items-center space-x-1.5">
-                               <span>{m}</span>
-                               {role === 'HOST' && (
-                                 <button onClick={() => setConfirmModal({ open: true, type: 'PLAYER', teamName: name, playerName: m })} className="text-slate-500 hover:text-rose-400">
-                                   <UserMinus className="w-2.5 h-2.5" />
-                                 </button>
-                               )}
-                              </span>
-                            ))}
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ))
+
+                        {expandedTeams[name] && (
+                          <div className="pt-2 border-t border-slate-800/60 mt-2 space-y-1.5">
+                            <div className="flex flex-wrap gap-1.5">
+                              {(data.members || []).map((m, i) => {
+                                const mName = getMemberName(m);
+                                return (
+                                  <span key={i} className="px-2.5 py-0.5 bg-slate-900 border border-slate-800 rounded-lg text-[10px] font-semibold text-slate-300 flex items-center space-x-1.5">
+                                   <span>{mName}</span>
+                                   {role === 'HOST' && (
+                                     <button onClick={() => setConfirmModal({ open: true, type: 'PLAYER', teamName: name, playerName: mName })} className="text-slate-500 hover:text-rose-400">
+                                       <UserMinus className="w-2.5 h-2.5" />
+                                     </button>
+                                   )}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
           </div>
 
-          {/* Activity Panel */}
+          {/* ACTIVITY FEED */}
           <div className="space-y-4">
             <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-3 backdrop-blur-md">
               <div className="flex items-center justify-between border-b border-slate-800 pb-2">
@@ -1153,7 +1254,7 @@ export default function App() {
             </div>
             <div className="flex items-center space-x-2">
               <button onClick={handleRefreshAdminRooms} className="px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 text-xs font-bold rounded-xl border border-indigo-500/40 flex items-center space-x-1 transition-all">
-                <RotateCcw className="w-3 h-3" />
+                <RotateCcw className="w-3.5 h-3.5" />
                 <span>Refresh</span>
               </button>
               <button onClick={() => { setScreen('LANDING'); setRole(null); }} className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-bold rounded-xl border border-slate-700">
@@ -1222,7 +1323,7 @@ export default function App() {
         </div>
       )}
 
-      {/* REFINED FOOTER */}
+      {/* FOOTER */}
       <footer className="text-center py-3 border-t border-slate-900/60 mt-4 space-y-0.5">
         <p className="text-xs text-slate-500 font-semibold tracking-wide">Developed by Tabres</p>
         <p className="text-[10px] font-mono font-bold tracking-widest text-indigo-400/90 uppercase">
