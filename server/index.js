@@ -64,9 +64,33 @@ function startRoomTimer(room, roomCode) {
 
     if (timeLeft <= 0) {
       stopRoomTimer(room, roomCode);
-      const logItem = addLog(room, 'TIMER', `⏰ Time expired for "${activeTeam}"!`);
-      io.to(roomCode).emit('TIMER_EXPIRED', { activeTeam });
+
+      // Auto-pass the timed-out team
+      const timedOutEntry = room.queue.shift();
+      const timedOutTeam = timedOutEntry ? timedOutEntry.teamName : activeTeam;
+
+      if (timedOutTeam) {
+        room.buzzedTeamsSet.delete(timedOutTeam.trim().toLowerCase());
+      }
+
+      const logItem = addLog(room, 'TIMER', `⏰ Time up for "${timedOutTeam}"!`);
+
+      // Broadcast expiration, queue release, and passed turn
+      io.to(roomCode).emit('TIMER_EXPIRED', { activeTeam: timedOutTeam });
+      io.to(roomCode).emit('TEAM_PASSED', { 
+        passedTeam: timedOutTeam, 
+        queue: room.queue 
+      });
+      io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { 
+        queue: room.queue, 
+        roundId: room.roundId 
+      });
       io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
+
+      // If next team is in queue, begin their timer
+      if (room.queue.length > 0 && room.timerConfig && room.timerConfig.enabled) {
+        startRoomTimer(room, roomCode);
+      }
     }
   }, 1000);
 }
@@ -268,7 +292,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 5. TEAMS CREATION & ACCURATE MULTI-MEMBER TRACKING
+  // 5. TEAMS CREATION & MEMBER MANAGEMENT
   socket.on('CREATE_TEAM', ({ roomCode, teamName }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -294,7 +318,6 @@ io.on('connection', (socket) => {
 
     const cleanName = (playerName || 'Player').trim();
 
-    // Remove this specific socket from all teams to prevent ghost duplicates
     Object.keys(room.teams).forEach((t) => {
       if (Array.isArray(room.teams[t].members)) {
         room.teams[t].members = room.teams[t].members.filter(m => {
@@ -306,12 +329,10 @@ io.on('connection', (socket) => {
       }
     });
 
-    // Add unique member entry
     room.teams[teamName].members.push({ id: socket.id, name: cleanName });
 
     const logItem = addLog(room, 'TEAM', `${cleanName} joined "${teamName}"`);
     
-    // Deep clone broadcast ensures every client React state re-renders immediately
     io.to(roomCode).emit('TEAMS_UPDATED', JSON.parse(JSON.stringify(room.teams)));
     io.to(roomCode).emit('NEW_ACTIVITY_LOG', logItem);
 
@@ -326,7 +347,7 @@ io.on('connection', (socket) => {
     broadcastAdminUpdate();
   });
 
-  // 6. HIGH-CONCURRENCY SUB-MILLISECOND BUZZ HANDLER
+  // 6. BUZZ HANDLER
   socket.on('PRESS_BUZZER', ({ roomCode, teamName, playerName }, ack) => {
     const room = rooms[roomCode];
     if (!room || room.status !== 'ACTIVE') {
@@ -342,7 +363,6 @@ io.on('connection', (socket) => {
 
     const teamKey = cleanTeam.toLowerCase();
 
-    // O(1) Atomic Deduplication Check
     if (room.buzzedTeamsSet.has(teamKey)) {
       return typeof ack === 'function' && ack({ success: false, reason: 'Already buzzed' });
     }
@@ -352,7 +372,6 @@ io.on('connection', (socket) => {
     room.queue.push(newEntry);
     const rank = room.queue.length;
 
-    // Single unified broadcast with rank and target team
     io.to(roomCode).emit('BUZZER_QUEUE_UPDATED', { 
       queue: room.queue, 
       roundId: room.roundId,
@@ -370,7 +389,7 @@ io.on('connection', (socket) => {
     if (typeof ack === 'function') ack({ success: true, rank, teamName: cleanTeam });
   });
 
-  // 7. PASS TURN (INSTANTLY UNLOCKS PASSED TEAM TO RE-BUZZ)
+  // 7. PASS TO NEXT
   socket.on('PASS_TO_NEXT', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room || room.queue.length === 0) return;
@@ -381,13 +400,11 @@ io.on('connection', (socket) => {
     const passedTeamName = failed ? failed.teamName : '';
     
     if (passedTeamName) {
-      // Remove from Set so they are immediately eligible to buzz again
       room.buzzedTeamsSet.delete(passedTeamName.trim().toLowerCase());
     }
 
     const logItem = addLog(room, 'BUZZ', `❌ "${passedTeamName || 'Turn'}" passed!`);
 
-    // Dedicated event triggers immediate buzzer unlock on passed participant's screen
     io.to(roomCode).emit('TEAM_PASSED', { 
       passedTeam: passedTeamName, 
       queue: room.queue 
@@ -405,7 +422,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  // 8. RESET BUZZERS (NEXT QUESTION)
+  // 8. RESET BUZZERS
   socket.on('RESET_BUZZER', ({ roomCode }) => {
     const room = rooms[roomCode];
     if (!room) return;
@@ -419,7 +436,7 @@ io.on('connection', (socket) => {
     io.to(roomCode).emit('BUZZER_RESET', { roundId: room.roundId });
   });
 
-  // 9. SCORE & ADVANCE
+  // 9. SCORE ADJUSTMENT
   socket.on('UPDATE_SCORE_AND_NEXT_QUESTION', ({ roomCode, teamName, delta }) => {
     const room = rooms[roomCode];
     if (!room || !room.teams[teamName]) return;
@@ -499,12 +516,10 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', () => {
-    // Keep members in team roster across mobile network drops
-  });
+  socket.on('disconnect', () => {});
 });
 
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
-  console.log(`v4.3.0 Ultra-Concurrency Engine listening on port ${PORT}`);
+  console.log(`v4.4.0 Engine listening on port ${PORT}`);
 });
