@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
-const APP_VERSION = "v4.5.0";
+const APP_VERSION = "v4.6.0";
 
 let audioCtx = null;
 const initAudio = () => {
@@ -28,10 +28,8 @@ const playSound = (type) => {
     initAudio();
     if (!audioCtx) return;
 
-    const osc = audioCtx.createGain ? audioCtx.createOscillator() : null;
-    const gain = audioCtx.createGain ? audioCtx.createGain() : null;
-    if (!osc || !gain) return;
-
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
     osc.connect(gain);
     gain.connect(audioCtx.destination);
 
@@ -98,8 +96,9 @@ export default function App() {
   const [roundId, setRoundId] = useState(1);
   const [hasBuzzedState, setHasBuzzedState] = useState(false);
   
-  // Timer
+  // Timer State
   const [timerConfig, setTimerConfig] = useState({ enabled: false, duration: 30 });
+  const [customDurationInput, setCustomDurationInput] = useState('30');
   const [timerLeft, setTimerLeft] = useState(null);
   const [isTimerActive, setIsTimerActive] = useState(false);
   const [timerActiveTeam, setTimerActiveTeam] = useState('');
@@ -128,6 +127,13 @@ export default function App() {
     teamRef.current = joinedTeam;
   }, [joinedTeam]);
 
+  // Synchronize custom input text when duration updates externally
+  useEffect(() => {
+    if (timerConfig?.duration) {
+      setCustomDurationInput(String(timerConfig.duration));
+    }
+  }, [timerConfig?.duration]);
+
   // Audio pre-warming on touch
   useEffect(() => {
     const handleWarm = () => initAudio();
@@ -139,7 +145,7 @@ export default function App() {
     };
   }, []);
 
-  // HYBRID DUAL STORAGE PERSISTENCE (Handles F5, Mobile Pull-to-Refresh & Sleep-Wake)
+  // HYBRID STORAGE SESSION RECOVERY
   const saveSession = (rCode, rRole, tName, pName) => {
     try {
       const payload = JSON.stringify({
@@ -180,7 +186,6 @@ export default function App() {
     return null;
   };
 
-  // Restore session immediately upon initial mount
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -234,7 +239,6 @@ export default function App() {
 
     socket.on('disconnect', () => setIsConnected(false));
 
-    // COMPLETE REFRESH SYNCHRONIZATION: Restores full room data on reload
     socket.on('ROOM_SYNCED', ({ roomCode: syncedRoom, role: syncedRole, teamName: syncedTeam, playerName: syncedPlayer, teams: syncedTeams, queue: syncedQueue, logs: syncedLogs, roundId: rId, timerConfig: tConf, timerState }) => {
       setRoomCode(syncedRoom);
       roomCodeRef.current = syncedRoom;
@@ -257,7 +261,10 @@ export default function App() {
       setQueue(syncedQueue || []);
       if (syncedLogs) setActivityLogs(syncedLogs);
       if (rId) setRoundId(rId);
-      if (tConf) setTimerConfig(tConf);
+      if (tConf) {
+        setTimerConfig(tConf);
+        setCustomDurationInput(String(tConf.duration || 30));
+      }
       
       const effectiveTeam = syncedTeam || teamRef.current;
       const isBuzzed = (syncedQueue || []).some(
@@ -266,7 +273,6 @@ export default function App() {
       buzzedLockRef.current = isBuzzed;
       setHasBuzzedState(isBuzzed);
 
-      // Restore active timer state on reload
       if (timerState && timerState.active && timerState.timeLeft !== null) {
         setIsTimerActive(true);
         setTimerLeft(timerState.timeLeft);
@@ -302,7 +308,10 @@ export default function App() {
       saveSession(rCode, 'HOST', '', hostName);
       if (logs) setActivityLogs(logs);
       if (rId) setRoundId(rId);
-      if (tConf) setTimerConfig(tConf);
+      if (tConf) {
+        setTimerConfig(tConf);
+        setCustomDurationInput(String(tConf.duration || 30));
+      }
     });
 
     socket.on('HOST_JOIN_SUCCESS', ({ roomCode: rCode, teams: t, queue: q, logs, roundId: rId, timerConfig: tConf }) => {
@@ -314,7 +323,10 @@ export default function App() {
       saveSession(rCode, 'HOST', '', playerRef.current);
       if (logs) setActivityLogs(logs);
       if (rId) setRoundId(rId);
-      if (tConf) setTimerConfig(tConf);
+      if (tConf) {
+        setTimerConfig(tConf);
+        setCustomDurationInput(String(tConf.duration || 30));
+      }
     });
 
     socket.on('JOIN_SUCCESS', ({ roomCode: joinedRoom, teamName: teamResult, teams: t, logs, roundId: rId, timerConfig: tConf }) => {
@@ -331,7 +343,10 @@ export default function App() {
       saveSession(joinedRoom, 'PARTICIPANT', teamResult || teamRef.current, playerRef.current);
       if (logs) setActivityLogs(logs);
       if (rId) setRoundId(rId);
-      if (tConf) setTimerConfig(tConf);
+      if (tConf) {
+        setTimerConfig(tConf);
+        setCustomDurationInput(String(tConf.duration || 30));
+      }
     });
 
     socket.on('ADMIN_LOGIN_SUCCESS', ({ adminName, roomsList }) => {
@@ -351,7 +366,7 @@ export default function App() {
       setTeams({ ...updatedTeams });
     });
 
-    socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId, justBuzzed, buzzerRank }) => {
+    socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId, buzzerRank }) => {
       setQueue(updatedQueue || []);
       if (currentRId) setRoundId(currentRId);
 
@@ -389,7 +404,10 @@ export default function App() {
       if (nextRoundId) setRoundId(nextRoundId);
     });
 
-    socket.on('TIMER_CONFIG_UPDATED', (conf) => setTimerConfig(conf));
+    socket.on('TIMER_CONFIG_UPDATED', (conf) => {
+      setTimerConfig(conf);
+      setCustomDurationInput(String(conf.duration || 30));
+    });
 
     socket.on('TIMER_STARTED', ({ duration, activeTeam }) => {
       setIsTimerActive(true);
@@ -527,11 +545,20 @@ export default function App() {
 
   const handleSetTimerDuration = (duration) => {
     if (!socketRef.current) return;
+    const durNum = Math.min(300, Math.max(5, Number(duration) || 5));
+    setCustomDurationInput(String(durNum));
     socketRef.current.emit('UPDATE_TIMER_CONFIG', {
       roomCode,
       enabled: timerConfig.enabled,
-      duration: Number(duration)
+      duration: durNum
     });
+  };
+
+  const handleCustomDurationCommit = () => {
+    let num = parseInt(customDurationInput, 10);
+    if (isNaN(num) || num < 5) num = 5;
+    if (num > 300) num = 300;
+    handleSetTimerDuration(num);
   };
 
   const handleRefreshAdminRooms = () => {
@@ -968,7 +995,7 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* TIMER SETTINGS */}
+                {/* TIMER SETTINGS (CLEAN BACKSPACE CUSTOM INPUT) */}
                 <div className="bg-slate-900/60 border border-slate-800/80 p-4 rounded-3xl space-y-3 backdrop-blur-md">
                   <div className="flex justify-between items-center border-b border-slate-800/80 pb-2.5">
                     <div className="flex items-center space-x-2">
@@ -1009,12 +1036,22 @@ export default function App() {
                         <div className="flex items-center space-x-1.5 ml-auto">
                           <span className="text-[10px] text-slate-500 font-mono">Custom:</span>
                           <input
-                            type="number"
-                            min="5"
-                            max="300"
-                            value={timerConfig.duration}
-                            onChange={(e) => handleSetTimerDuration(e.target.value)}
-                            className="w-14 bg-slate-950/80 border border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-center outline-none focus:border-indigo-500"
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9]*"
+                            placeholder="Sec"
+                            value={customDurationInput}
+                            onChange={(e) => {
+                              const cleanDigits = e.target.value.replace(/\D/g, '');
+                              setCustomDurationInput(cleanDigits);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.currentTarget.blur();
+                              }
+                            }}
+                            onBlur={handleCustomDurationCommit}
+                            className="w-14 bg-slate-950/80 border border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-center outline-none focus:border-indigo-500 text-white"
                           />
                         </div>
                       </div>
@@ -1141,7 +1178,7 @@ export default function App() {
 
                       <div className="flex items-center space-x-1.5">
                         <button onClick={() => setMembersModalTeam(joinedTeam)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
-                          <Users className="w-3.5 h-3.5 text-indigo-400" />
+                          <Users className="w-3 h-3 text-indigo-400" />
                           <span>Roster ({(teams[joinedTeam]?.members || []).length})</span>
                         </button>
                         <button onClick={handleLeaveTeam} className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-[11px] font-semibold flex items-center space-x-1 transition-all">
