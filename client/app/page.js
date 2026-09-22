@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
-const APP_VERSION = "v4.3.0";
+const APP_VERSION = "v4.4.0";
 
 let audioCtx = null;
 const initAudio = () => {
@@ -28,8 +28,10 @@ const playSound = (type) => {
     initAudio();
     if (!audioCtx) return;
 
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    const osc = audioCtx.createGain ? audioCtx.createOscillator() : null;
+    const gain = audioCtx.createGain ? audioCtx.createGain() : null;
+    if (!osc || !gain) return;
+
     osc.connect(gain);
     gain.connect(audioCtx.destination);
 
@@ -121,7 +123,6 @@ export default function App() {
     roomCodeRef.current = roomCode;
   }, [roomCode]);
 
-  // Audio pre-warming on touch
   useEffect(() => {
     const handleWarm = () => initAudio();
     window.addEventListener('touchstart', handleWarm, { once: true, passive: true });
@@ -132,7 +133,6 @@ export default function App() {
     };
   }, []);
 
-  // Auto-restore session if mobile reloads
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -283,7 +283,6 @@ export default function App() {
       setTeams({ ...updatedTeams });
     });
 
-    // ATOMIC QUEUE UPDATE (PLAYS SOUND ONLY FOR #1 BUZZ)
     socket.on('BUZZER_QUEUE_UPDATED', ({ queue: updatedQueue, roundId: currentRId, justBuzzed, buzzerRank }) => {
       setQueue(updatedQueue || []);
       if (currentRId) setRoundId(currentRId);
@@ -299,7 +298,6 @@ export default function App() {
       }
     });
 
-    // INSTANT RE-BUZZ UNLOCK ON PASS
     socket.on('TEAM_PASSED', ({ passedTeam, queue: newQueue }) => {
       setQueue(newQueue || []);
       const myTeam = (teamRef.current || '').trim().toLowerCase();
@@ -336,12 +334,25 @@ export default function App() {
       if (timeLeft <= 5 && timeLeft > 0) playSound('TICK');
     });
 
+    // TIME'S UP HANDLER: Turns green button back to red
     socket.on('TIMER_EXPIRED', ({ activeTeam }) => {
-      setIsTimerActive(false);
+      setIsTimerActive(true);
       setTimerLeft(0);
       playSound('TIMEOUT');
-      setToastMessage(`⏰ Time expired for "${activeTeam}"!`);
-      setTimeout(() => setToastMessage(''), 3500);
+      setToastMessage(`⏰ TIME UP for "${activeTeam}"!`);
+
+      // Immediately unlock the timed-out team and return button to red
+      const myTeam = (teamRef.current || '').trim().toLowerCase();
+      if (myTeam && myTeam === (activeTeam || '').trim().toLowerCase()) {
+        buzzedLockRef.current = false;
+        setHasBuzzedState(false);
+      }
+
+      setTimeout(() => {
+        setIsTimerActive(false);
+        setTimerLeft(null);
+        setToastMessage('');
+      }, 3000);
     });
 
     socket.on('TIMER_STOPPED', () => {
@@ -524,11 +535,9 @@ export default function App() {
     (item) => (item.teamName || '').trim().toLowerCase() === (teamRef.current || '').trim().toLowerCase()
   );
   
-  // Confirmed locked if in queue or optimistic tap active
   const isBuzzedConfirmed = myTeamQueueIndex !== -1 || hasBuzzedState;
   const myRank = myTeamQueueIndex !== -1 ? myTeamQueueIndex + 1 : (hasBuzzedState ? '1' : null);
 
-  // WIRE-FIRST ATOMIC BUZZ TRIGGER
   const handleBuzz = useCallback((e) => {
     if (e) {
       e.preventDefault();
@@ -551,11 +560,9 @@ export default function App() {
     }, (ack) => {
       if (!ack || !ack.success) {
         if (ack && ack.reason === 'Already buzzed') {
-          // Teammate beat them to it: keep locked
           buzzedLockRef.current = true;
           setHasBuzzedState(true);
         } else {
-          // General failure: unlock
           buzzedLockRef.current = false;
           setHasBuzzedState(false);
         }
@@ -845,14 +852,16 @@ export default function App() {
         <div className="max-w-5xl mx-auto my-auto w-full grid grid-cols-1 lg:grid-cols-3 gap-5 py-2">
           <div className="lg:col-span-2 space-y-4">
 
-            {/* COUNTDOWN BANNER */}
+            {/* COUNTDOWN CLOCK BANNER & TIME UP DISPLAY */}
             {timerConfig.enabled && isTimerActive && timerLeft !== null && (
               <div className={`p-3.5 rounded-2xl border text-center transition-all duration-300 shadow-xl flex items-center justify-between px-6 ${
-                timerLeft <= 5 
-                  ? 'bg-rose-950/90 border-rose-500/80 animate-pulse text-rose-300' 
-                  : timerLeft <= 10 
-                    ? 'bg-amber-950/80 border-amber-500/80 text-amber-300' 
-                    : 'bg-indigo-950/80 border-indigo-500/80 text-indigo-200'
+                timerLeft === 0
+                  ? 'bg-rose-950 border-rose-500 animate-pulse text-rose-200'
+                  : timerLeft <= 5 
+                    ? 'bg-rose-950/90 border-rose-500/80 animate-pulse text-rose-300' 
+                    : timerLeft <= 10 
+                      ? 'bg-amber-950/80 border-amber-500/80 text-amber-300' 
+                      : 'bg-indigo-950/80 border-indigo-500/80 text-indigo-200'
               }`}>
                 <div className="flex items-center space-x-3">
                   <Timer className={`w-6 h-6 ${timerLeft <= 5 ? 'text-rose-400' : 'text-indigo-400'}`} />
@@ -863,7 +872,11 @@ export default function App() {
                 </div>
 
                 <div className="text-right">
-                  <span className="font-mono text-3xl font-black">{timerLeft}s</span>
+                  {timerLeft === 0 ? (
+                    <span className="font-mono text-xl sm:text-2xl font-black text-rose-400 tracking-wider">TIME UP!</span>
+                  ) : (
+                    <span className="font-mono text-3xl font-black">{timerLeft}s</span>
+                  )}
                 </div>
               </div>
             )}
@@ -1065,7 +1078,7 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* ULTRA-RESPONSIVE ZERO-LATENCY TOUCH BUZZER */}
+                    {/* TOUCH BUZZER (GREEN WHEN LOCKED, TURNS RED ON TIME UP) */}
                     <div className="py-2 flex flex-col items-center justify-center">
                       <button
                         onPointerDown={handleBuzz}
