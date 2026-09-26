@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 
 const SOCKET_URL = "https://buzzer-n9va.onrender.com";
-const APP_VERSION = "v4.6.0";
+const APP_VERSION = "v4.7.0";
 
 let audioCtx = null;
 const initAudio = () => {
@@ -95,6 +95,7 @@ export default function App() {
   const [adminRoomsList, setAdminRoomsList] = useState([]);
   const [roundId, setRoundId] = useState(1);
   const [hasBuzzedState, setHasBuzzedState] = useState(false);
+  const [resetCountdown, setResetCountdown] = useState(null);
   
   // Timer State
   const [timerConfig, setTimerConfig] = useState({ enabled: false, duration: 30 });
@@ -133,6 +134,21 @@ export default function App() {
       setCustomDurationInput(String(timerConfig.duration));
     }
   }, [timerConfig?.duration]);
+
+  // 5-Second Reset Countdown Engine
+  useEffect(() => {
+    if (resetCountdown === null) return;
+    
+    if (resetCountdown > 0) {
+      if (resetCountdown <= 3) playSound('TICK'); // Ticks on 3, 2, 1
+      const timer = setTimeout(() => setResetCountdown(resetCountdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else {
+      setResetCountdown(null);
+      buzzedLockRef.current = false;
+      setHasBuzzedState(false);
+    }
+  }, [resetCountdown]);
 
   // Audio pre-warming on touch
   useEffect(() => {
@@ -397,8 +413,10 @@ export default function App() {
 
     socket.on('BUZZER_RESET', ({ roundId: nextRoundId }) => {
       setQueue([]);
-      buzzedLockRef.current = false;
       setHasBuzzedState(false);
+      buzzedLockRef.current = true;
+      setResetCountdown(5);
+      
       setIsTimerActive(false);
       setTimerLeft(null);
       if (nextRoundId) setRoundId(nextRoundId);
@@ -644,7 +662,7 @@ export default function App() {
     }
 
     const currentActiveTeam = joinedTeam || teamRef.current;
-    if (buzzedLockRef.current || isBuzzedConfirmed || !socketRef.current || !currentActiveTeam) {
+    if (buzzedLockRef.current || isBuzzedConfirmed || !socketRef.current || !currentActiveTeam || (resetCountdown !== null && resetCountdown > 0)) {
       return;
     }
 
@@ -668,7 +686,7 @@ export default function App() {
         }
       }
     });
-  }, [isBuzzedConfirmed, roomCode, enteredName, joinedTeam]);
+  }, [isBuzzedConfirmed, roomCode, enteredName, joinedTeam, resetCountdown]);
 
   const confirmAction = () => {
     if (!socketRef.current) return;
@@ -1178,7 +1196,7 @@ export default function App() {
 
                       <div className="flex items-center space-x-1.5">
                         <button onClick={() => setMembersModalTeam(joinedTeam)} className="px-2.5 py-1.5 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 rounded-xl text-[11px] font-semibold text-slate-200 flex items-center space-x-1 transition-all">
-                          <Users className="w-3 h-3 text-indigo-400" />
+                          <Users className="w-3.5 h-3.5 text-indigo-400" />
                           <span>Roster ({(teams[joinedTeam]?.members || []).length})</span>
                         </button>
                         <button onClick={handleLeaveTeam} className="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-[11px] font-semibold flex items-center space-x-1 transition-all">
@@ -1188,22 +1206,30 @@ export default function App() {
                       </div>
                     </div>
 
-                    {/* TOUCH BUZZER (GREEN WHEN LOCKED, TURNS RED ON PASS/RESET/TIMEOUT) */}
+                    {/* TOUCH BUZZER (AMBER ON COUNTDOWN, RED WHEN READY, GREEN WHEN LOCKED) */}
                     <div className="py-2 flex flex-col items-center justify-center">
                       <button
                         onPointerDown={handleBuzz}
-                        disabled={isBuzzedConfirmed}
+                        disabled={isBuzzedConfirmed || (resetCountdown !== null && resetCountdown > 0)}
                         className={`w-56 h-56 sm:w-60 sm:h-60 rounded-full select-none transition-transform duration-75 active:scale-95 flex items-center justify-center relative ${
-                          isBuzzedConfirmed 
-                            ? 'bg-slate-900 border-4 border-emerald-500/80 shadow-[0_0_40px_rgba(16,185,129,0.25)] cursor-not-allowed pointer-events-none' 
-                            : 'bg-gradient-to-b from-rose-500 via-red-600 to-rose-800 border-4 border-red-400/80 shadow-[0_15px_35px_rgba(225,29,72,0.45)] active:translate-y-1 cursor-pointer'
+                          (resetCountdown !== null && resetCountdown > 0)
+                            ? 'bg-slate-900 border-4 border-amber-500/80 shadow-[0_0_40px_rgba(245,158,11,0.25)] cursor-not-allowed pointer-events-none'
+                            : isBuzzedConfirmed 
+                              ? 'bg-slate-900 border-4 border-emerald-500/80 shadow-[0_0_40px_rgba(16,185,129,0.25)] cursor-not-allowed pointer-events-none' 
+                              : 'bg-gradient-to-b from-rose-500 via-red-600 to-rose-800 border-4 border-red-400/80 shadow-[0_15px_35px_rgba(225,29,72,0.45)] active:translate-y-1 cursor-pointer'
                         }`}
                         style={{ touchAction: 'manipulation' }}
                       >
-                        <div className={`absolute inset-2 rounded-full border border-white/20 pointer-events-none ${isBuzzedConfirmed ? 'hidden' : 'block'}`} />
+                        <div className={`absolute inset-2 rounded-full border border-white/20 pointer-events-none ${isBuzzedConfirmed || (resetCountdown !== null && resetCountdown > 0) ? 'hidden' : 'block'}`} />
                         
                         <div className="flex flex-col items-center space-y-0.5 select-none pointer-events-none">
-                          {isBuzzedConfirmed ? (
+                          {(resetCountdown !== null && resetCountdown > 0) ? (
+                            <>
+                              <Clock className="w-8 h-8 text-amber-400 mb-1 animate-pulse" />
+                              <span className="text-5xl font-black text-amber-400 font-mono tracking-tighter">{resetCountdown}</span>
+                              <span className="text-[10px] font-extrabold tracking-widest text-amber-300 uppercase mt-1">GET READY</span>
+                            </>
+                          ) : isBuzzedConfirmed ? (
                             <>
                               <Check className="w-8 h-8 text-emerald-400" />
                               <span className="text-3xl font-black text-emerald-400 font-mono tracking-tighter">#{myRank}</span>
@@ -1219,8 +1245,12 @@ export default function App() {
                       </button>
                     </div>
 
-                    <p className="text-[11px] font-medium text-slate-500 text-center">
-                      {isBuzzedConfirmed ? `Buzzed at Position #${myRank}! Waiting for host verdict...` : 'Tap buzzer to lock in the turn for your team'}
+                    <p className="text-[11px] font-medium text-slate-500 text-center h-4 mt-2">
+                      {(resetCountdown !== null && resetCountdown > 0) 
+                        ? 'Wait for the countdown...' 
+                        : isBuzzedConfirmed 
+                          ? `Buzzed at Position #${myRank}! Waiting for host verdict...` 
+                          : 'Tap buzzer to lock in the turn for your team'}
                     </p>
 
                     {/* LIVE SPEED QUEUE */}
